@@ -11,6 +11,7 @@ import LiveScreen from './src/screens/LiveScreen';
 import SolarScreen from './src/screens/SolarScreen';
 import WindScreen from './src/screens/WindScreen';
 import TicketsScreen from './src/screens/TicketsScreen';
+import AnalyticsScreen from './src/screens/AnalyticsScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -55,6 +56,9 @@ export default function App() {
             } else if (route.name === 'Wind') {
               iconName = 'leaf';
               gradientColors = ['#06b6d4', '#22d3ee'];
+            } else if (route.name === 'Analytics') {
+              iconName = 'analytics';
+              gradientColors = ['#8b5cf6', '#a78bfa'];
             } else if (route.name === 'Tickets') {
               iconName = 'ticket';
               gradientColors = ['#ec4899', '#f472b6'];
@@ -95,6 +99,7 @@ export default function App() {
         <Tab.Screen name="Live" component={LiveScreen} />
         <Tab.Screen name="Solar" component={SolarScreen} />
         <Tab.Screen name="Wind" component={WindScreen} />
+        <Tab.Screen name="Analytics" component={AnalyticsScreen} />
         <Tab.Screen name="Tickets" component={TicketsScreen} />
       </Tab.Navigator>
     </NavigationContainer>

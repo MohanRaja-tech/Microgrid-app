@@ -1,0 +1,24 @@
+const { Client } = require("pg");
+
+// Database configuration
+const dbConfig = {
+    host: "192.168.43.147",
+    port: 5432,
+    user: "postgres",
+    password: "Ghost+10125",
+    database: "microgrid_db",
+};
+
+// Table configuration
+const tableConfig = {
+    meter: "meter_data",
+    solar: "solar_data"
+};
+
+const client = new Client(dbConfig);
+
+client.connect()
+    .then(() => console.log("Connected to PostgreSQL"))
+    .catch(err => console.error("Connection error", err));
+
+module.exports = { client, dbConfig, tableConfig };
