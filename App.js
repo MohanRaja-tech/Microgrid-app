@@ -60,7 +60,7 @@ export default function App() {
               iconName = 'analytics';
               gradientColors = ['#8b5cf6', '#a78bfa'];
             } else if (route.name === 'Tickets') {
-              iconName = 'ticket';
+              iconName = 'receipt';
               gradientColors = ['#ec4899', '#f472b6'];
             }
 

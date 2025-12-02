@@ -33,8 +33,8 @@ const DB_CONFIG = {
 };
 
 // API Base URL - Points to the backend server running on your local machine
-// The backend server (analyticsServer.js) connects to PostgreSQL at 192.168.43.147
-const API_BASE_URL = 'http://192.168.43.110:3001';
+// The backend server (analyticsServer.js) connects to PostgreSQL at 100.69.116.48
+const API_BASE_URL = 'http://192.168.43.158:3001';
 
 class AnalyticsService {
   constructor() {

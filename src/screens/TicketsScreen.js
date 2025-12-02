@@ -73,7 +73,7 @@ const TicketsScreen = () => {
         <View style={styles.ticketHeader}>
           <View style={styles.ticketIdRow}>
             <View style={[styles.ticketIdBadge, { backgroundColor: '#eef2ff' }]}>
-              <Ionicons name="ticket" size={14} color="#6366f1" />
+              <Ionicons name="receipt-outline" size={14} color="#6366f1" />
               <Text style={styles.ticketId}>{ticket.id}</Text>
             </View>
           </View>

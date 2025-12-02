@@ -10,10 +10,13 @@ import {
   Modal,
   ActivityIndicator,
   Alert,
+  Share,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import AnalyticsService from '../services/AnalyticsService';
+import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 
 const { width } = Dimensions.get('window');
 
@@ -293,6 +296,7 @@ const AnalyticsScreen = () => {
   // State for selections
   const [selectedSource, setSelectedSource] = useState(null); // 'Meter' or 'Solar'
   const [selectedSubOption, setSelectedSubOption] = useState(null); // Line 1/2/3 or Panel 1/2
+  const [selectedColumn, setSelectedColumn] = useState(null); // Column to visualize
   const [fromDate, setFromDate] = useState(null);
   const [toDate, setToDate] = useState(null);
   const [showFromDatePicker, setShowFromDatePicker] = useState(false);
@@ -323,15 +327,36 @@ const AnalyticsScreen = () => {
     ],
   };
 
+  // Column options based on source type (excluding time and id columns)
+  const columnOptions = {
+    Meter: [
+      { id: 'voltage', label: 'Voltage', unit: 'V', icon: 'flash', color: '#ef4444' },
+      { id: 'current', label: 'Current', unit: 'A', icon: 'pulse', color: '#f59e0b' },
+      { id: 'power', label: 'Power', unit: 'W', icon: 'flash-outline', color: '#10b981' },
+      { id: 'energy', label: 'Energy', unit: 'kWh', icon: 'battery-charging', color: '#6366f1' },
+      { id: 'pf', label: 'Power Factor', unit: '', icon: 'analytics', color: '#8b5cf6' },
+      { id: 'frequency', label: 'Frequency', unit: 'Hz', icon: 'radio', color: '#ec4899' },
+    ],
+    Solar: [
+      { id: 'voltage', label: 'Voltage', unit: 'V', icon: 'flash', color: '#ef4444' },
+      { id: 'current', label: 'Current', unit: 'A', icon: 'pulse', color: '#f59e0b' },
+      { id: 'power', label: 'Power', unit: 'W', icon: 'flash-outline', color: '#10b981' },
+    ],
+  };
+
   const handleSourceSelect = (source) => {
     setSelectedSource(source);
     setSelectedSubOption(null); // Reset sub-option when source changes
+    setSelectedColumn(null); // Reset column selection
     setFromDate(null);
     setToDate(null);
+    setAnalyticsData(null);
+    setChartData([]);
   };
 
   const handleSubOptionSelect = (option) => {
     setSelectedSubOption(option);
+    setSelectedColumn(null); // Reset column selection
     setFromDate(null);
     setToDate(null);
     setAnalyticsData(null);
@@ -340,9 +365,25 @@ const AnalyticsScreen = () => {
     setError(null);
   };
 
+  const handleColumnSelect = (column) => {
+    setSelectedColumn(column);
+    setFromDate(null);
+    setToDate(null);
+    setAnalyticsData(null);
+    setChartData([]);
+    setStats({ avg: 0, max: 0, min: 0, total: 0, count: 0 });
+    setError(null);
+  };
+
+  // Get selected column info
+  const getSelectedColumnInfo = () => {
+    if (!selectedSource || !selectedColumn) return null;
+    return columnOptions[selectedSource].find(col => col.id === selectedColumn);
+  };
+
   // Function to fetch analytics data
   const fetchAnalyticsData = async () => {
-    if (!selectedSource || !selectedSubOption || !fromDate || !toDate) {
+    if (!selectedSource || !selectedSubOption || !selectedColumn || !fromDate || !toDate) {
       return;
     }
 
@@ -357,7 +398,7 @@ const AnalyticsScreen = () => {
       const fromDateStr = `${fromDate.getFullYear()}-${String(fromDate.getMonth() + 1).padStart(2, '0')}-${String(fromDate.getDate()).padStart(2, '0')}`;
       const toDateStr = `${toDate.getFullYear()}-${String(toDate.getMonth() + 1).padStart(2, '0')}-${String(toDate.getDate()).padStart(2, '0')}`;
 
-      console.log('Fetching data:', { selectedSource, filterValue, fromDateStr, toDateStr });
+      console.log('Fetching data:', { selectedSource, filterValue, fromDateStr, toDateStr, selectedColumn });
 
       const response = await AnalyticsService.fetchAnalyticsData(
         selectedSource,
@@ -371,8 +412,8 @@ const AnalyticsScreen = () => {
       if (response.success && response.data) {
         setAnalyticsData(response.data);
         
-        // Process data for chart
-        const processed = AnalyticsService.processDataForChart(response.data, selectedSource);
+        // Process data for chart with selected column
+        const processed = processDataForChart(response.data, selectedColumn);
         setChartData(processed.chartData);
         setStats(processed.stats);
       } else {
@@ -388,12 +429,271 @@ const AnalyticsScreen = () => {
     }
   };
 
+  // Process data for the selected column
+  const processDataForChart = (rawData, columnName) => {
+    if (!rawData || rawData.length === 0) {
+      return {
+        chartData: [],
+        stats: { avg: 0, max: 0, min: 0, total: 0, count: 0 }
+      };
+    }
+
+    // Group data by time periods
+    const groupedData = {};
+    
+    rawData.forEach(item => {
+      const timestamp = item.timestamp || item.time;
+      if (!timestamp) return;
+      
+      const date = new Date(timestamp);
+      let dateKey;
+      
+      // Smart grouping based on data volume
+      if (rawData.length > 500) {
+        // Group by day for large datasets
+        dateKey = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      } else if (rawData.length > 100) {
+        // Group by hour for medium datasets
+        dateKey = `${date.getHours()}:00`;
+      } else {
+        // Use individual timestamps for small datasets
+        dateKey = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+      }
+      
+      if (!groupedData[dateKey]) {
+        groupedData[dateKey] = { values: [], count: 0 };
+      }
+      
+      // Get the value for the selected column
+      const value = parseFloat(item[columnName]) || 0;
+      
+      groupedData[dateKey].values.push(value);
+      groupedData[dateKey].count++;
+    });
+
+    // Convert to chart data format
+    const chartData = Object.keys(groupedData).map(label => {
+      const group = groupedData[label];
+      const avgValue = group.values.reduce((a, b) => a + b, 0) / group.count;
+      return {
+        label: label,
+        value: avgValue
+      };
+    });
+
+    // Calculate statistics for the selected column
+    const allValues = rawData.map(item => parseFloat(item[columnName]) || 0).filter(v => !isNaN(v) && v !== 0);
+
+    const stats = {
+      max: allValues.length > 0 ? Math.max(...allValues) : 0,
+      min: allValues.length > 0 ? Math.min(...allValues) : 0,
+      avg: allValues.length > 0 ? allValues.reduce((a, b) => a + b, 0) / allValues.length : 0,
+      total: allValues.reduce((a, b) => a + b, 0),
+      count: rawData.length
+    };
+
+    return { chartData, stats };
+  };
+
   // Auto-fetch when all selections are made
   useEffect(() => {
-    if (selectedSource && selectedSubOption && fromDate && toDate) {
+    if (selectedSource && selectedSubOption && selectedColumn && fromDate && toDate) {
       fetchAnalyticsData();
     }
   }, [fromDate, toDate]);
+
+  // Re-process data when column changes and data exists
+  useEffect(() => {
+    if (analyticsData && selectedColumn) {
+      const processed = processDataForChart(analyticsData, selectedColumn);
+      setChartData(processed.chartData);
+      setStats(processed.stats);
+    }
+  }, [selectedColumn]);
+
+  // Generate CSV content helper
+  const generateCSVContent = () => {
+    if (!analyticsData || analyticsData.length === 0) {
+      return null;
+    }
+
+    // Get column info for proper labeling
+    const colInfo = getSelectedColumnInfo();
+    
+    // Create CSV headers based on data structure
+    const dataKeys = Object.keys(analyticsData[0]);
+    
+    // Create friendly headers
+    const headerMapping = {
+      'time': 'Timestamp',
+      'meter_id': 'Meter ID',
+      'panel_id': 'Panel ID',
+      'voltage': 'Voltage (V)',
+      'current': 'Current (A)',
+      'power': 'Power (W)',
+      'energy': 'Energy (kWh)',
+      'pf': 'Power Factor',
+      'frequency': 'Frequency (Hz)'
+    };
+    
+    const headers = dataKeys.map(key => headerMapping[key] || key).join(',');
+    
+    // Create CSV rows with proper escaping
+    const rows = analyticsData.map(item => 
+      dataKeys.map(key => {
+        let val = item[key];
+        
+        // Handle null/undefined
+        if (val === null || val === undefined) {
+          return '';
+        }
+        
+        // Format date/time values
+        if (key === 'time' && val) {
+          try {
+            const date = new Date(val);
+            if (!isNaN(date.getTime())) {
+              val = date.toLocaleString();
+            }
+          } catch (e) {
+            // Keep original value if parsing fails
+          }
+        }
+        
+        // Convert to string
+        val = String(val);
+        
+        // Escape values that contain commas, quotes, or newlines
+        if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+          val = `"${val.replace(/"/g, '""')}"`;
+        }
+        
+        return val;
+      }).join(',')
+    ).join('\n');
+    
+    // Add BOM for Excel UTF-8 compatibility
+    const BOM = '\uFEFF';
+    return BOM + `${headers}\n${rows}`;
+  };
+
+  // Generate filename helper
+  const generateFilename = () => {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const safeSubOption = selectedSubOption ? selectedSubOption.replace(/[^a-zA-Z0-9]/g, '_') : 'data';
+    return `${selectedSource}_${safeSubOption}_${selectedColumn}_${timestamp}.csv`;
+  };
+
+  // Share CSV function
+  const handleShareCSV = async () => {
+    if (!analyticsData || analyticsData.length === 0) {
+      Alert.alert('No Data', 'There is no data to export.');
+      return;
+    }
+
+    try {
+      const csvContent = generateCSVContent();
+      const filename = generateFilename();
+      const fileUri = FileSystem.documentDirectory + filename;
+      
+      await FileSystem.writeAsStringAsync(fileUri, csvContent, { 
+        encoding: FileSystem.EncodingType.UTF8 
+      });
+      
+      const isAvailable = await Sharing.isAvailableAsync();
+      
+      if (isAvailable) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'text/csv',
+          dialogTitle: `Share ${getSelectedColumnInfo()?.label || selectedColumn} Data`,
+          UTI: 'public.comma-separated-values-text'
+        });
+      } else {
+        Alert.alert('Sharing Unavailable', 'Sharing is not available on this device.');
+      }
+    } catch (error) {
+      console.error('Share error:', error);
+      Alert.alert('Share Error', `Failed to share data: ${error.message}`);
+    }
+  };
+
+  // Download CSV function - saves to device storage
+  const handleDownloadCSV = async () => {
+    if (!analyticsData || analyticsData.length === 0) {
+      Alert.alert('No Data', 'There is no data to download.');
+      return;
+    }
+
+    try {
+      const csvContent = generateCSVContent();
+      const filename = generateFilename();
+      
+      // Check platform
+      if (Platform.OS === 'web') {
+        // Web: Create a download link
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        Alert.alert(
+          'Download Complete',
+          `File "${filename}" has been downloaded.`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        // Mobile: Save to Downloads folder using SAF (Storage Access Framework)
+        const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync();
+        
+        if (permissions.granted) {
+          // User selected a directory
+          const directoryUri = permissions.directoryUri;
+          
+          // Create the file in the selected directory
+          const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(
+            directoryUri,
+            filename,
+            'text/csv'
+          );
+          
+          // Write content to the file
+          await FileSystem.writeAsStringAsync(fileUri, csvContent, {
+            encoding: FileSystem.EncodingType.UTF8
+          });
+          
+          Alert.alert(
+            'Download Complete',
+            `File "${filename}" saved successfully!\n\nRecords: ${analyticsData.length}`,
+            [{ text: 'OK' }]
+          );
+        } else {
+          // Permission denied - fallback to app documents directory
+          const fileUri = FileSystem.documentDirectory + filename;
+          await FileSystem.writeAsStringAsync(fileUri, csvContent, {
+            encoding: FileSystem.EncodingType.UTF8
+          });
+          
+          Alert.alert(
+            'Saved to App Storage',
+            `File saved to app storage.\n\nTo access it externally, use the "Share" option instead.`,
+            [{ text: 'OK' }]
+          );
+        }
+      }
+    } catch (error) {
+      console.error('Download error:', error);
+      Alert.alert(
+        'Download Error',
+        `Failed to download: ${error.message}`,
+        [{ text: 'OK' }]
+      );
+    }
+  };
 
   const formatDate = (date) => {
     if (!date) return '';
@@ -401,7 +701,10 @@ const AnalyticsScreen = () => {
     return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
   };
 
-  const canShowGraph = selectedSource && selectedSubOption && fromDate && toDate;
+  const canShowGraph = selectedSource && selectedSubOption && selectedColumn && fromDate && toDate;
+
+  // Get column info for display
+  const columnInfo = getSelectedColumnInfo();
 
   // Calculate bar heights based on actual data
   const getBarData = () => {
@@ -413,9 +716,10 @@ const AnalyticsScreen = () => {
       ];
     }
 
-    // Get up to 7 data points for display
-    const maxPoints = 7;
-    const step = Math.max(1, Math.floor(chartData.length / maxPoints));
+    // Show all data points since we have horizontal scrolling
+    // Limit to reasonable max for performance
+    const maxPoints = 30;
+    const step = chartData.length > maxPoints ? Math.floor(chartData.length / maxPoints) : 1;
     const displayData = [];
     
     for (let i = 0; i < chartData.length && displayData.length < maxPoints; i += step) {
@@ -430,7 +734,7 @@ const AnalyticsScreen = () => {
   };
 
   const barData = getBarData();
-  const maxValue = Math.max(...barData.map(d => d.value), 1);
+  const maxValue = Math.max(...barData.map(d => d.value), 0.1);
 
   return (
     <View style={styles.container}>
@@ -442,12 +746,15 @@ const AnalyticsScreen = () => {
         end={{ x: 1, y: 1 }}
       >
         <View style={styles.headerTop}>
-          <View>
-            <Text style={styles.headerTitle}>Analytics 📊</Text>
-            <Text style={styles.headerSubtitle}>View historical data trends</Text>
+          <View style={styles.headerTitleRow}>
+            <Ionicons name="stats-chart" size={26} color="#ffffff" style={{ marginRight: 10 }} />
+            <View>
+              <Text style={styles.headerTitle}>Analytics</Text>
+              <Text style={styles.headerSubtitle}>View historical data trends</Text>
+            </View>
           </View>
           <View style={styles.headerIcon}>
-            <Ionicons name="bar-chart" size={24} color="rgba(255,255,255,0.3)" />
+            <Ionicons name="bar-chart" size={24} color="rgba(255,255,255,0.5)" />
           </View>
         </View>
       </LinearGradient>
@@ -553,12 +860,69 @@ const AnalyticsScreen = () => {
           </View>
         )}
 
-        {/* Step 3: Date Range Selection */}
+        {/* Step 3: Column Selection */}
         {selectedSubOption && (
           <View style={styles.stepContainer}>
             <View style={styles.stepHeader}>
               <View style={styles.stepBadge}>
                 <Text style={styles.stepNumber}>3</Text>
+              </View>
+              <Text style={styles.stepTitle}>Select Parameter to Visualize</Text>
+            </View>
+            
+            <View style={styles.columnOptionsGrid}>
+              {columnOptions[selectedSource].map((column) => (
+                <TouchableOpacity
+                  key={column.id}
+                  style={[
+                    styles.columnCard,
+                    selectedColumn === column.id && styles.columnCardSelected,
+                    selectedColumn === column.id && { borderColor: column.color }
+                  ]}
+                  onPress={() => handleColumnSelect(column.id)}
+                  activeOpacity={0.7}
+                >
+                  <View style={[
+                    styles.columnIconContainer,
+                    { backgroundColor: selectedColumn === column.id ? column.color : '#f1f5f9' }
+                  ]}>
+                    <Ionicons 
+                      name={column.icon} 
+                      size={20} 
+                      color={selectedColumn === column.id ? '#ffffff' : column.color} 
+                    />
+                  </View>
+                  <Text style={[
+                    styles.columnLabel,
+                    selectedColumn === column.id && { color: column.color, fontWeight: '700' }
+                  ]}>
+                    {column.label}
+                  </Text>
+                  {column.unit && (
+                    <Text style={[
+                      styles.columnUnit,
+                      selectedColumn === column.id && { color: column.color }
+                    ]}>
+                      ({column.unit})
+                    </Text>
+                  )}
+                  {selectedColumn === column.id && (
+                    <View style={[styles.columnCheck, { backgroundColor: column.color }]}>
+                      <Ionicons name="checkmark" size={12} color="#ffffff" />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Step 4: Date Range Selection */}
+        {selectedColumn && (
+          <View style={styles.stepContainer}>
+            <View style={styles.stepHeader}>
+              <View style={styles.stepBadge}>
+                <Text style={styles.stepNumber}>4</Text>
               </View>
               <Text style={styles.stepTitle}>Select Date Range</Text>
             </View>
@@ -618,7 +982,7 @@ const AnalyticsScreen = () => {
           <View style={styles.stepContainer}>
             <View style={styles.stepHeader}>
               <View style={styles.stepBadge}>
-                <Text style={styles.stepNumber}>4</Text>
+                <Text style={styles.stepNumber}>5</Text>
               </View>
               <Text style={styles.stepTitle}>Data Visualization</Text>
               {isLoading && <ActivityIndicator size="small" color="#6366f1" style={{ marginLeft: 10 }} />}
@@ -631,8 +995,8 @@ const AnalyticsScreen = () => {
                 <Text style={styles.summaryText}>{selectedSource} - {selectedSubOption}</Text>
               </View>
               <View style={styles.summaryItem}>
-                <Ionicons name="calendar-outline" size={16} color="#6366f1" />
-                <Text style={styles.summaryText}>{formatDate(fromDate)} → {formatDate(toDate)}</Text>
+                <Ionicons name={columnInfo?.icon || 'analytics'} size={16} color={columnInfo?.color || '#6366f1'} />
+                <Text style={[styles.summaryText, { color: columnInfo?.color || '#6366f1' }]}>{columnInfo?.label || selectedColumn}</Text>
               </View>
             </View>
 
@@ -659,68 +1023,102 @@ const AnalyticsScreen = () => {
             {!isLoading && !error && (
               <View style={styles.graphContainer}>
                 <View style={styles.graphHeader}>
-                  <Text style={styles.graphTitle}>Power Consumption (W)</Text>
-                  <View style={styles.dataCountBadge}>
-                    <Ionicons name="analytics" size={12} color="#6366f1" />
-                    <Text style={styles.dataCountText}>{stats.count} readings</Text>
+                  <Text style={styles.graphTitle}>{columnInfo?.label || 'Value'} {columnInfo?.unit ? `(${columnInfo.unit})` : ''}</Text>
+                  <View style={[styles.dataCountBadge, { backgroundColor: `${columnInfo?.color}15` || '#eef2ff' }]}>
+                    <Ionicons name="analytics" size={12} color={columnInfo?.color || '#6366f1'} />
+                    <Text style={[styles.dataCountText, { color: columnInfo?.color || '#6366f1' }]}>{stats.count} readings</Text>
                   </View>
                 </View>
 
-                {/* Dynamic Graph Bars */}
-                <View style={styles.graphArea}>
-                  <View style={styles.yAxis}>
-                    <Text style={styles.axisLabel}>{maxValue.toFixed(0)}</Text>
-                    <Text style={styles.axisLabel}>{(maxValue * 0.75).toFixed(0)}</Text>
-                    <Text style={styles.axisLabel}>{(maxValue * 0.5).toFixed(0)}</Text>
-                    <Text style={styles.axisLabel}>{(maxValue * 0.25).toFixed(0)}</Text>
-                    <Text style={styles.axisLabel}>0</Text>
+                {/* Line Chart Area */}
+                <View style={styles.chartContainer}>
+                  {/* Y-Axis Labels */}
+                  <View style={styles.yAxisContainer}>
+                    <Text style={styles.yAxisLabel}>{maxValue.toFixed(1)}</Text>
+                    <Text style={styles.yAxisLabel}>{(maxValue * 0.75).toFixed(1)}</Text>
+                    <Text style={styles.yAxisLabel}>{(maxValue * 0.5).toFixed(1)}</Text>
+                    <Text style={styles.yAxisLabel}>{(maxValue * 0.25).toFixed(1)}</Text>
+                    <Text style={styles.yAxisLabel}>0</Text>
                   </View>
-                  <View style={styles.barsContainer}>
-                    {barData.map((item, index) => {
-                      const heightPercent = maxValue > 0 ? (item.value / maxValue) * 100 : 0;
-                      return (
-                        <View key={index} style={styles.barWrapper}>
-                          <Text style={styles.barValue}>{item.value.toFixed(1)}</Text>
-                          <LinearGradient
-                            colors={selectedSource === 'Meter' ? ['#6366f1', '#8b5cf6'] : ['#f59e0b', '#fbbf24']}
-                            style={[styles.bar, { height: `${Math.max(heightPercent, 2)}%` }]}
-                            start={{ x: 0, y: 1 }}
-                            end={{ x: 0, y: 0 }}
-                          />
-                          <Text style={styles.barLabel} numberOfLines={1}>
-                            {item.label}
-                          </Text>
+                  
+                  {/* Scrollable Chart Grid and Bars */}
+                  <ScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={true}
+                    style={styles.chartScrollView}
+                    contentContainerStyle={[styles.chartScrollContent, { minWidth: Math.max(barData.length * 60, width - 100) }]}
+                  >
+                    <View style={styles.chartArea}>
+                      {/* Grid Lines */}
+                      <View style={styles.gridLines}>
+                        {[0, 1, 2, 3, 4].map(i => (
+                          <View key={i} style={styles.gridLine} />
+                        ))}
+                      </View>
+                      
+                      {/* Bars and Labels Container */}
+                      <View style={styles.barsAndLabelsContainer}>
+                        {/* Bars Row */}
+                        <View style={styles.barsRow}>
+                          {barData.map((item, index) => {
+                            const heightPercent = maxValue > 0 ? (item.value / maxValue) * 100 : 0;
+                            return (
+                              <View key={index} style={[styles.barColumn, { width: 55 }]}>
+                                <Text style={[styles.barValueText, { color: columnInfo?.color || '#6366f1' }]}>
+                                  {item.value.toFixed(2)}
+                                </Text>
+                                <View style={styles.barOuter}>
+                                  <LinearGradient
+                                    colors={[columnInfo?.color || '#6366f1', `${columnInfo?.color}99` || '#8b5cf6']}
+                                    style={[styles.barInner, { height: `${Math.max(heightPercent, 2)}%` }]}
+                                    start={{ x: 0, y: 0 }}
+                                    end={{ x: 0, y: 1 }}
+                                  />
+                                </View>
+                              </View>
+                            );
+                          })}
                         </View>
-                      );
-                    })}
-                  </View>
-                </View>
-
-                {/* Graph Footer - Statistics */}
-                <View style={styles.graphFooter}>
-                  <View style={styles.graphStat}>
-                    <Text style={styles.graphStatLabel}>Peak</Text>
-                    <Text style={styles.graphStatValue}>{stats.max.toFixed(2)} W</Text>
-                  </View>
-                  <View style={styles.graphStat}>
-                    <Text style={styles.graphStatLabel}>Average</Text>
-                    <Text style={styles.graphStatValue}>{stats.avg.toFixed(2)} W</Text>
-                  </View>
-                  <View style={styles.graphStat}>
-                    <Text style={styles.graphStatLabel}>Minimum</Text>
-                    <Text style={styles.graphStatValue}>{stats.min.toFixed(2)} W</Text>
-                  </View>
-                </View>
-
-                {/* Data Status Badge */}
-                {chartData.length > 0 ? (
-                  <View style={styles.dataBadgeContainer}>
-                    <View style={styles.dataBadge}>
-                      <Ionicons name="checkmark-circle" size={14} color="#10b981" />
-                      <Text style={styles.dataBadgeText}>Live data from PostgreSQL</Text>
+                        
+                        {/* X-Axis Labels Row - Separate from bars */}
+                        <View style={styles.xAxisLabelsRow}>
+                          {barData.map((item, index) => (
+                            <View key={index} style={[styles.xAxisLabelContainer, { width: 55 }]}>
+                              <Text style={styles.xAxisLabelText} numberOfLines={2}>
+                                {item.label}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
                     </View>
+                  </ScrollView>
+                </View>
+
+                {/* Statistics Cards */}
+                <View style={styles.statsContainer}>
+                  <View style={[styles.statCard, { borderLeftColor: '#10b981' }]}>
+                    <Text style={styles.statLabel}>Maximum</Text>
+                    <Text style={[styles.statValue, { color: '#10b981' }]}>
+                      {stats.max.toFixed(2)} {columnInfo?.unit || ''}
+                    </Text>
                   </View>
-                ) : (
+                  <View style={[styles.statCard, { borderLeftColor: '#6366f1' }]}>
+                    <Text style={styles.statLabel}>Average</Text>
+                    <Text style={[styles.statValue, { color: '#6366f1' }]}>
+                      {stats.avg.toFixed(2)} {columnInfo?.unit || ''}
+                    </Text>
+                  </View>
+                  <View style={[styles.statCard, { borderLeftColor: '#f59e0b' }]}>
+                    <Text style={styles.statLabel}>Minimum</Text>
+                    <Text style={[styles.statValue, { color: '#f59e0b' }]}>
+                      {stats.min.toFixed(2)} {columnInfo?.unit || ''}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Data Status Badge - Only show when no data */}
+                {chartData.length === 0 && (
                   <View style={styles.dataBadgeContainer}>
                     <View style={[styles.dataBadge, { backgroundColor: '#fef3c7' }]}>
                       <Ionicons name="information-circle" size={14} color="#f59e0b" />
@@ -749,17 +1147,28 @@ const AnalyticsScreen = () => {
               </LinearGradient>
             </TouchableOpacity>
 
-            {/* Export Buttons (UI Only) */}
-            <View style={styles.exportButtons}>
-              <TouchableOpacity style={styles.exportBtn} activeOpacity={0.7}>
-                <Ionicons name="download-outline" size={18} color="#6366f1" />
-                <Text style={styles.exportBtnText}>Export CSV</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.exportBtn} activeOpacity={0.7}>
-                <Ionicons name="share-outline" size={18} color="#6366f1" />
-                <Text style={styles.exportBtnText}>Share</Text>
-              </TouchableOpacity>
-            </View>
+            {/* Export CSV Buttons - Share and Download */}
+            {analyticsData && analyticsData.length > 0 && (
+              <View style={styles.exportButtonsRow}>
+                <TouchableOpacity 
+                  style={styles.shareBtn} 
+                  activeOpacity={0.7}
+                  onPress={handleShareCSV}
+                >
+                  <Ionicons name="share-social-outline" size={18} color="#6366f1" />
+                  <Text style={styles.shareBtnText}>Share CSV</Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity 
+                  style={styles.downloadBtn} 
+                  activeOpacity={0.7}
+                  onPress={handleDownloadCSV}
+                >
+                  <Ionicons name="download-outline" size={18} color="#ffffff" />
+                  <Text style={styles.downloadBtnText}>Download CSV</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         )}
 
@@ -784,6 +1193,10 @@ const styles = StyleSheet.create({
   headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
   headerTitle: {
@@ -924,6 +1337,58 @@ const styles = StyleSheet.create({
     color: '#6366f1',
     fontWeight: '600',
   },
+  columnOptionsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -4,
+  },
+  columnCard: {
+    width: '31%',
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    padding: 12,
+    margin: '1%',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  columnCardSelected: {
+    backgroundColor: '#faf5ff',
+  },
+  columnIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  columnLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+    textAlign: 'center',
+  },
+  columnUnit: {
+    fontSize: 10,
+    color: '#94a3b8',
+    marginTop: 2,
+  },
+  columnCheck: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   dateContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1033,6 +1498,120 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#1e293b',
+    flex: 1,
+  },
+  chartContainer: {
+    flexDirection: 'row',
+    height: 280,
+    marginBottom: 16,
+  },
+  yAxisContainer: {
+    width: 45,
+    justifyContent: 'space-between',
+    paddingRight: 8,
+    paddingTop: 5,
+    paddingBottom: 45,
+  },
+  yAxisLabel: {
+    fontSize: 10,
+    color: '#94a3b8',
+    textAlign: 'right',
+    fontWeight: '500',
+  },
+  chartScrollView: {
+    flex: 1,
+  },
+  chartScrollContent: {
+    flexGrow: 1,
+  },
+  chartArea: {
+    flex: 1,
+    position: 'relative',
+  },
+  gridLines: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 45,
+    justifyContent: 'space-between',
+  },
+  gridLine: {
+    height: 1,
+    backgroundColor: '#f1f5f9',
+  },
+  barsAndLabelsContainer: {
+    flex: 1,
+    flexDirection: 'column',
+  },
+  barsRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    paddingBottom: 5,
+  },
+  barColumn: {
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: 4,
+  },
+  barValueText: {
+    fontSize: 9,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  barOuter: {
+    width: 28,
+    height: 160,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  barInner: {
+    width: '100%',
+    borderRadius: 4,
+    minHeight: 4,
+  },
+  xAxisLabelsRow: {
+    flexDirection: 'row',
+    height: 40,
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    paddingTop: 6,
+  },
+  xAxisLabelContainer: {
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingHorizontal: 2,
+  },
+  xAxisLabelText: {
+    fontSize: 10,
+    color: '#64748b',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 12,
+    marginHorizontal: 4,
+    borderLeftWidth: 3,
+  },
+  statLabel: {
+    fontSize: 11,
+    color: '#64748b',
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  statValue: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   graphLegend: {
     flexDirection: 'row',
@@ -1229,6 +1808,55 @@ const styles = StyleSheet.create({
   refreshBtnText: {
     color: '#ffffff',
     fontSize: 15,
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  exportBtnFull: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 16,
+    borderWidth: 1.5,
+    borderColor: '#6366f1',
+  },
+  exportButtonsRow: {
+    flexDirection: 'row',
+    marginTop: 16,
+  },
+  shareBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#6366f1',
+    marginRight: 6,
+  },
+  shareBtnText: {
+    fontSize: 14,
+    color: '#6366f1',
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  downloadBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#6366f1',
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginLeft: 6,
+  },
+  downloadBtnText: {
+    fontSize: 14,
+    color: '#ffffff',
     fontWeight: '600',
     marginLeft: 8,
   },
