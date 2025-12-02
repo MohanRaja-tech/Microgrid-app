@@ -1,0 +1,46 @@
+1. Bottom Navigation Bar (NavBar):
+ Home → Dashboard / Welcome screen
+ Live → Real-time meter values
+ Solar → Solar energy monitoring
+ Wind → Wind energy monitoring
+ Tickets → Support or fault tickets
+
+2. Live Section (Meters)
+ Voltage (V)
+ Current (A)
+ Power (W)
+ Energy (kWh)
+ Power Factor (unitless)
+ Frequency (Hz)
+ Harmonics (%)
+Example:
+ Meter 1
+ Voltage: 230 V
+ Current: 5.2 A
+ Power: 1200 W
+ Energy: 50 kWh
+ Power Factor: 0.95
+ Frequency: 50 Hz
+ Harmonics: 3.2 %
+(etc…. Meter 2, Meter 3, Meter 4.)
+
+3. Solar
+ Same Layout Like Meters
+ Voltage: V
+ Current: A
+ Power: W
+ Temperature: kWh
+
+4. Wind
+ Same Layout Like Meters
+ Voltage: V
+ Current: A
+ Power: W
+ Speed of the wind: kWh
+
+5. Tickets Section
+ Users can raise tickets for issues.
+ Ticket ID
+ Description
+ Status (Open, In Progress, Resolved)
+ Date &amp; Time
