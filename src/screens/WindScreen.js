@@ -6,6 +6,7 @@ import {
   ScrollView,
   RefreshControl,
   TouchableOpacity,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -14,54 +15,10 @@ const WindScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
 
   const windData = [
-    {
-      id: 1,
-      name: 'Wind Turbine 1',
-      voltage: 24.5,
-      current: 13.1,
-      power: 320,
-      windSpeed: 12.5,
-      direction: 'NW',
-      efficiency: 85.2,
-      rotorSpeed: 28,
-      status: 'Online',
-    },
-    {
-      id: 2,
-      name: 'Wind Turbine 2',
-      voltage: 23.8,
-      current: 12.4,
-      power: 295,
-      windSpeed: 11.8,
-      direction: 'W',
-      efficiency: 82.7,
-      rotorSpeed: 26,
-      status: 'Online',
-    },
-    {
-      id: 3,
-      name: 'Wind Turbine 3',
-      voltage: 25.2,
-      current: 14.2,
-      power: 358,
-      windSpeed: 14.2,
-      direction: 'NW',
-      efficiency: 88.5,
-      rotorSpeed: 32,
-      status: 'Online',
-    },
-    {
-      id: 4,
-      name: 'Wind Turbine 4',
-      voltage: 0,
-      current: 0,
-      power: 0,
-      windSpeed: 8.5,
-      direction: 'N',
-      efficiency: 0,
-      rotorSpeed: 0,
-      status: 'Maintenance',
-    },
+    { id: 1, name: 'Wind Turbine 1', voltage: 24.5, current: 13.1, power: 320, windSpeed: 12.5, direction: 'NW', efficiency: 85.2, rotorSpeed: 28, status: 'Online' },
+    { id: 2, name: 'Wind Turbine 2', voltage: 23.8, current: 12.4, power: 295, windSpeed: 11.8, direction: 'W', efficiency: 82.7, rotorSpeed: 26, status: 'Online' },
+    { id: 3, name: 'Wind Turbine 3', voltage: 25.2, current: 14.2, power: 358, windSpeed: 14.2, direction: 'NW', efficiency: 88.5, rotorSpeed: 32, status: 'Online' },
+    { id: 4, name: 'Wind Turbine 4', voltage: 0, current: 0, power: 0, windSpeed: 8.5, direction: 'N', efficiency: 0, rotorSpeed: 0, status: 'Maintenance' },
   ];
 
   const onRefresh = () => {
@@ -71,56 +28,31 @@ const WindScreen = () => {
     }, 2000);
   };
 
-  const getParameterIcon = (parameter) => {
-    const icons = {
-      voltage: 'flash',
-      current: 'trending-up',
-      power: 'speedometer',
-      windSpeed: 'leaf',
-      direction: 'compass',
-      efficiency: 'analytics',
-      rotorSpeed: 'refresh-circle',
-    };
-    return icons[parameter] || 'information-circle';
-  };
-
-  const getParameterColor = (parameter) => {
-    const colors = {
-      voltage: '#3b82f6',
-      current: '#10b981',
-      power: '#f59e0b',
-      windSpeed: '#06b6d4',
-      direction: '#8b5cf6',
-      efficiency: '#ef4444',
-      rotorSpeed: '#f97316',
-    };
-    return colors[parameter] || '#6b7280';
-  };
-
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'Online': return '#10b981';
-      case 'Offline': return '#ef4444';
-      case 'Maintenance': return '#f59e0b';
-      default: return '#6b7280';
-    }
+  const parameterConfig = {
+    voltage: { icon: 'flash', gradient: ['#6366f1', '#8b5cf6'], bgColor: '#eef2ff' },
+    current: { icon: 'trending-up', gradient: ['#10b981', '#34d399'], bgColor: '#ecfdf5' },
+    power: { icon: 'speedometer', gradient: ['#f59e0b', '#fbbf24'], bgColor: '#fffbeb' },
+    windSpeed: { icon: 'leaf', gradient: ['#06b6d4', '#22d3ee'], bgColor: '#ecfeff' },
+    direction: { icon: 'compass', gradient: ['#8b5cf6', '#a78bfa'], bgColor: '#f5f3ff' },
+    rotorSpeed: { icon: 'refresh-circle', gradient: ['#f97316', '#fb923c'], bgColor: '#fff7ed' },
   };
 
   const getWindSpeedCategory = (speed) => {
-    if (speed < 5) return 'Low';
-    if (speed < 12) return 'Moderate';
-    if (speed < 20) return 'High';
-    return 'Very High';
+    if (speed < 5) return { label: 'Low', color: '#10b981' };
+    if (speed < 12) return { label: 'Moderate', color: '#f59e0b' };
+    if (speed < 20) return { label: 'High', color: '#06b6d4' };
+    return { label: 'Very High', color: '#ef4444' };
   };
 
   const renderWindCard = (turbine) => {
+    const windCategory = getWindSpeedCategory(turbine.windSpeed);
     const parameters = [
-      { key: 'voltage', label: 'Voltage', value: `${turbine.voltage} V`, unit: 'V' },
-      { key: 'current', label: 'Current', value: `${turbine.current} A`, unit: 'A' },
-      { key: 'power', label: 'Power', value: `${turbine.power} W`, unit: 'W' },
-      { key: 'windSpeed', label: 'Wind Speed', value: `${turbine.windSpeed} m/s`, unit: 'm/s' },
+      { key: 'voltage', label: 'Voltage', value: `${turbine.voltage}`, unit: 'V' },
+      { key: 'current', label: 'Current', value: `${turbine.current}`, unit: 'A' },
+      { key: 'power', label: 'Power', value: `${turbine.power}`, unit: 'W' },
+      { key: 'windSpeed', label: 'Wind Speed', value: `${turbine.windSpeed}`, unit: 'm/s' },
       { key: 'direction', label: 'Direction', value: turbine.direction, unit: '' },
-      { key: 'rotorSpeed', label: 'Rotor Speed', value: `${turbine.rotorSpeed} RPM`, unit: 'RPM' },
+      { key: 'rotorSpeed', label: 'Rotor', value: `${turbine.rotorSpeed}`, unit: 'RPM' },
     ];
 
     return (
@@ -129,17 +61,20 @@ const WindScreen = () => {
           colors={['#06b6d4', '#0891b2']}
           style={styles.cardHeader}
           start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
+          end={{ x: 1, y: 1 }}
         >
           <View style={styles.headerContent}>
             <View style={styles.titleContainer}>
-              <Ionicons name="leaf" size={28} color="#ffffff" />
-              <Text style={styles.turbineTitle}>{turbine.name}</Text>
+              <View style={styles.iconCircle}>
+                <Ionicons name="leaf" size={22} color="#06b6d4" />
+              </View>
+              <View>
+                <Text style={styles.turbineTitle}>{turbine.name}</Text>
+                <Text style={styles.turbineSubtitle}>Wind Power System</Text>
+              </View>
             </View>
-            <View style={[
-              styles.statusBadge,
-              { backgroundColor: getStatusColor(turbine.status) }
-            ]}>
+            <View style={[styles.statusPill, { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
+              <View style={[styles.statusDot, { backgroundColor: '#ffffff' }]} />
               <Text style={styles.statusText}>{turbine.status}</Text>
             </View>
           </View>
@@ -147,46 +82,61 @@ const WindScreen = () => {
 
         <View style={styles.parametersContainer}>
           {/* Wind Speed Highlight */}
-          <View style={styles.windSpeedContainer}>
-            <View style={styles.windSpeedHeader}>
-              <Ionicons name="leaf" size={24} color="#06b6d4" />
-              <Text style={styles.windSpeedTitle}>Wind Conditions</Text>
+          <View style={styles.windSpeedHighlight}>
+            <View style={styles.windSpeedLeft}>
+              <View style={styles.windIconLarge}>
+                <Ionicons name="leaf" size={28} color="#06b6d4" />
+              </View>
+              <View>
+                <Text style={styles.windSpeedLabel}>Wind Speed</Text>
+                <View style={styles.windSpeedValueRow}>
+                  <Text style={styles.windSpeedValue}>{turbine.windSpeed}</Text>
+                  <Text style={styles.windSpeedUnit}>m/s</Text>
+                </View>
+              </View>
             </View>
-            <View style={styles.windSpeedContent}>
-              <Text style={styles.windSpeedValue}>{turbine.windSpeed} m/s</Text>
-              <Text style={styles.windSpeedCategory}>{getWindSpeedCategory(turbine.windSpeed)}</Text>
-              <Text style={styles.windDirection}>Direction: {turbine.direction}</Text>
+            <View style={styles.windSpeedRight}>
+              <View style={[styles.categoryBadge, { backgroundColor: windCategory.color + '20' }]}>
+                <Text style={[styles.categoryText, { color: windCategory.color }]}>{windCategory.label}</Text>
+              </View>
+              <Text style={styles.directionText}>Direction: {turbine.direction}</Text>
             </View>
           </View>
 
           <View style={styles.parametersGrid}>
-            {parameters.map((param, index) => (
-              <View key={index} style={styles.parameterCard}>
-                <View style={styles.parameterHeader}>
-                  <Ionicons
-                    name={getParameterIcon(param.key)}
-                    size={20}
-                    color={getParameterColor(param.key)}
-                  />
+            {parameters.map((param, index) => {
+              const config = parameterConfig[param.key];
+              return (
+                <View key={index} style={styles.parameterCard}>
+                  <View style={[styles.paramIconContainer, { backgroundColor: config.bgColor }]}>
+                    <Ionicons name={config.icon} size={16} color={config.gradient[0]} />
+                  </View>
                   <Text style={styles.parameterLabel}>{param.label}</Text>
+                  <View style={styles.parameterValueRow}>
+                    <Text style={[styles.parameterValue, { color: config.gradient[0] }]}>{param.value}</Text>
+                    <Text style={styles.parameterUnit}>{param.unit}</Text>
+                  </View>
                 </View>
-                <Text style={[styles.parameterValue, { color: getParameterColor(param.key) }]}>
-                  {param.value}
-                </Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
 
-          {/* Efficiency Indicator */}
           <View style={styles.efficiencyContainer}>
-            <Text style={styles.efficiencyTitle}>Turbine Efficiency</Text>
-            <View style={styles.efficiencyBar}>
-              <LinearGradient
-                colors={['#10b981', '#34d399']}
-                style={[styles.efficiencyFill, { width: `${turbine.efficiency}%` }]}
-              />
+            <View style={styles.efficiencyHeader}>
+              <Ionicons name="analytics" size={18} color="#06b6d4" />
+              <Text style={styles.efficiencyTitle}>Turbine Efficiency</Text>
             </View>
-            <Text style={styles.efficiencyText}>{turbine.efficiency}% Efficiency</Text>
+            <View style={styles.efficiencyBarContainer}>
+              <View style={styles.efficiencyBar}>
+                <LinearGradient
+                  colors={['#06b6d4', '#22d3ee']}
+                  style={[styles.efficiencyFill, { width: `${turbine.efficiency}%` }]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                />
+              </View>
+              <Text style={styles.efficiencyPercent}>{turbine.efficiency}%</Text>
+            </View>
           </View>
         </View>
       </View>
@@ -199,45 +149,51 @@ const WindScreen = () => {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <LinearGradient
         colors={['#06b6d4', '#0891b2']}
         style={styles.header}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
       >
-        <Text style={styles.headerTitle}>Wind Energy Monitoring</Text>
-        <Text style={styles.headerSubtitle}>Real-time wind turbine performance</Text>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.headerTitle}>Wind Energy 🍃</Text>
+            <Text style={styles.headerSubtitle}>Turbine monitoring system</Text>
+          </View>
+          <TouchableOpacity style={styles.refreshBtn} onPress={onRefresh}>
+            <Ionicons name="refresh" size={18} color="#06b6d4" />
+          </TouchableOpacity>
+        </View>
         
-        {/* Summary Stats */}
-        <View style={styles.summaryContainer}>
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryValue}>{totalPower}W</Text>
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryValue}>{totalPower}</Text>
+            <Text style={styles.summaryUnit}>W</Text>
             <Text style={styles.summaryLabel}>Total Power</Text>
           </View>
-          <View style={styles.summaryItem}>
-            <Text style={styles.summaryValue}>{avgWindSpeed} m/s</Text>
-            <Text style={styles.summaryLabel}>Avg Wind Speed</Text>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryValue}>{avgWindSpeed}</Text>
+            <Text style={styles.summaryUnit}>m/s</Text>
+            <Text style={styles.summaryLabel}>Avg Wind</Text>
           </View>
-          <View style={styles.summaryItem}>
+          <View style={styles.summaryCard}>
             <Text style={styles.summaryValue}>{activeTurbines}</Text>
-            <Text style={styles.summaryLabel}>Active Turbines</Text>
+            <Text style={styles.summaryUnit}>/{windData.length}</Text>
+            <Text style={styles.summaryLabel}>Active</Text>
           </View>
         </View>
-
-        <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
-          <Ionicons name="refresh" size={20} color="#ffffff" />
-          <Text style={styles.refreshText}>Refresh Data</Text>
-        </TouchableOpacity>
       </LinearGradient>
 
-      {/* Wind Turbines List */}
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#06b6d4']} />
         }
       >
         {windData.map((turbine) => renderWindCard(turbine))}
+        <View style={styles.bottomSpacer} />
       </ScrollView>
     </View>
   );
@@ -246,73 +202,88 @@ const WindScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#f1f5f9',
   },
   header: {
-    padding: 20,
-    paddingBottom: 25,
+    paddingTop: Platform.OS === 'ios' ? 60 : 45,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 5,
-  },
-  headerSubtitle: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginBottom: 20,
-  },
-  summaryContainer: {
+  headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 20,
   },
-  summaryItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  summaryValue: {
-    fontSize: 20,
+  headerTitle: {
+    fontSize: 28,
     fontWeight: 'bold',
     color: '#ffffff',
+    letterSpacing: -0.5,
   },
-  summaryLabel: {
+  headerSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 4,
+  },
+  refreshBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  summaryCard: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 16,
+    padding: 14,
+    marginHorizontal: 4,
+    alignItems: 'center',
+  },
+  summaryValue: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#ffffff',
+  },
+  summaryUnit: {
     fontSize: 12,
     color: 'rgba(255, 255, 255, 0.8)',
-    marginTop: 5,
-  },
-  refreshButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-    alignSelf: 'flex-start',
-  },
-  refreshText: {
-    color: '#ffffff',
-    marginLeft: 8,
     fontWeight: '600',
+    marginTop: -2,
+  },
+  summaryLabel: {
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 4,
+    fontWeight: '500',
   },
   scrollView: {
     flex: 1,
-    paddingHorizontal: 20,
+  },
+  scrollContent: {
+    padding: 16,
   },
   windCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 15,
-    marginBottom: 20,
+    borderRadius: 20,
+    marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 4,
     overflow: 'hidden',
   },
   cardHeader: {
-    padding: 20,
+    padding: 18,
   },
   headerContent: {
     flexDirection: 'row',
@@ -324,121 +295,197 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
-  turbineTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginLeft: 12,
+  iconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
   },
-  statusBadge: {
+  turbineTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#ffffff',
+    letterSpacing: -0.3,
+  },
+  turbineSubtitle: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.75)',
+    marginTop: 2,
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
   },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 6,
+  },
   statusText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     color: '#ffffff',
   },
   parametersContainer: {
-    padding: 20,
+    padding: 18,
   },
-  windSpeedContainer: {
-    backgroundColor: '#f0f9ff',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#bae6fd',
+  windSpeedHighlight: {
+    flexDirection: 'row',
+    backgroundColor: '#ecfeff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    alignItems: 'center',
   },
-  windSpeedHeader: {
+  windSpeedLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    flex: 1,
   },
-  windSpeedTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#0c4a6e',
-    marginLeft: 10,
-  },
-  windSpeedContent: {
+  windIconLarge: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#cffafe',
     alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  windSpeedLabel: {
+    fontSize: 11,
+    color: '#0e7490',
+    fontWeight: '500',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  windSpeedValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
   },
   windSpeedValue: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: '#06b6d4',
-    marginBottom: 5,
+    letterSpacing: -1,
   },
-  windSpeedCategory: {
+  windSpeedUnit: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#0c4a6e',
-    marginBottom: 3,
+    color: '#0891b2',
+    fontWeight: '500',
+    marginLeft: 4,
   },
-  windDirection: {
-    fontSize: 12,
+  windSpeedRight: {
+    alignItems: 'flex-end',
+  },
+  categoryBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+    marginBottom: 4,
+  },
+  categoryText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  directionText: {
+    fontSize: 11,
     color: '#64748b',
+    fontWeight: '500',
   },
   parametersGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: 16,
+    marginHorizontal: -4,
   },
   parameterCard: {
-    width: '48%',
-    backgroundColor: '#f7fafc',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    width: '31%',
+    backgroundColor: '#f8fafc',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    marginHorizontal: '1%',
   },
-  parameterHeader: {
-    flexDirection: 'row',
+  paramIconContainer: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
     alignItems: 'center',
-    marginBottom: 8,
+    justifyContent: 'center',
+    marginBottom: 6,
   },
   parameterLabel: {
-    fontSize: 12,
-    color: '#718096',
-    fontWeight: '600',
-    marginLeft: 8,
+    fontSize: 10,
+    color: '#64748b',
+    fontWeight: '500',
+    marginBottom: 3,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  parameterValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
   },
   parameterValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
+  parameterUnit: {
+    fontSize: 10,
+    color: '#94a3b8',
+    fontWeight: '500',
+    marginLeft: 2,
   },
   efficiencyContainer: {
-    backgroundColor: '#f7fafc',
-    borderRadius: 12,
-    padding: 15,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    backgroundColor: '#ecfeff',
+    borderRadius: 14,
+    padding: 14,
   },
-  efficiencyTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2d3748',
+  efficiencyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginBottom: 10,
   },
+  efficiencyTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0e7490',
+    marginLeft: 8,
+  },
+  efficiencyBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   efficiencyBar: {
+    flex: 1,
     height: 8,
-    backgroundColor: '#e2e8f0',
+    backgroundColor: '#cffafe',
     borderRadius: 4,
-    marginBottom: 8,
     overflow: 'hidden',
+    marginRight: 12,
   },
   efficiencyFill: {
     height: '100%',
     borderRadius: 4,
   },
-  efficiencyText: {
-    fontSize: 12,
-    color: '#718096',
-    textAlign: 'center',
+  efficiencyPercent: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#06b6d4',
+    minWidth: 40,
+    textAlign: 'right',
+  },
+  bottomSpacer: {
+    height: 20,
   },
 });
 

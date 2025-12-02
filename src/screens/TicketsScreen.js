@@ -8,6 +8,8 @@ import {
   TextInput,
   Modal,
   Alert,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -20,73 +22,23 @@ const TicketsScreen = () => {
   });
 
   const [tickets, setTickets] = useState([
-    {
-      id: 'TKT001',
-      description: 'Meter 2 showing inconsistent power factor readings',
-      status: 'Open',
-      priority: 'High',
-      dateTime: '2024-01-15 14:30',
-      assignedTo: 'John Smith',
-    },
-    {
-      id: 'TKT002',
-      description: 'Solar Panel Array 3 efficiency dropped below 15%',
-      status: 'In Progress',
-      priority: 'Medium',
-      dateTime: '2024-01-14 09:15',
-      assignedTo: 'Sarah Johnson',
-    },
-    {
-      id: 'TKT003',
-      description: 'Wind Turbine 4 requires scheduled maintenance',
-      status: 'Resolved',
-      priority: 'Low',
-      dateTime: '2024-01-12 16:45',
-      assignedTo: 'Mike Davis',
-    },
-    {
-      id: 'TKT004',
-      description: 'Dashboard not loading real-time data for Meter 1',
-      status: 'Open',
-      priority: 'High',
-      dateTime: '2024-01-15 11:20',
-      assignedTo: 'Lisa Wilson',
-    },
-    {
-      id: 'TKT005',
-      description: 'Request for additional monitoring parameters',
-      status: 'In Progress',
-      priority: 'Low',
-      dateTime: '2024-01-13 13:00',
-      assignedTo: 'Tom Brown',
-    },
+    { id: 'TKT001', description: 'Meter 2 showing inconsistent power factor readings', status: 'Open', priority: 'High', dateTime: '2024-01-15 14:30', assignedTo: 'John Smith' },
+    { id: 'TKT002', description: 'Solar Panel Array 3 efficiency dropped below 15%', status: 'In Progress', priority: 'Medium', dateTime: '2024-01-14 09:15', assignedTo: 'Sarah Johnson' },
+    { id: 'TKT003', description: 'Wind Turbine 4 requires scheduled maintenance', status: 'Resolved', priority: 'Low', dateTime: '2024-01-12 16:45', assignedTo: 'Mike Davis' },
+    { id: 'TKT004', description: 'Dashboard not loading real-time data for Meter 1', status: 'Open', priority: 'High', dateTime: '2024-01-15 11:20', assignedTo: 'Lisa Wilson' },
+    { id: 'TKT005', description: 'Request for additional monitoring parameters', status: 'In Progress', priority: 'Low', dateTime: '2024-01-13 13:00', assignedTo: 'Tom Brown' },
   ]);
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'Open': return '#ef4444';
-      case 'In Progress': return '#f59e0b';
-      case 'Resolved': return '#10b981';
-      default: return '#6b7280';
-    }
+  const statusConfig = {
+    'Open': { bg: '#fef2f2', color: '#ef4444', icon: 'alert-circle' },
+    'In Progress': { bg: '#fffbeb', color: '#f59e0b', icon: 'time' },
+    'Resolved': { bg: '#ecfdf5', color: '#10b981', icon: 'checkmark-circle' },
   };
 
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case 'High': return '#ef4444';
-      case 'Medium': return '#f59e0b';
-      case 'Low': return '#10b981';
-      default: return '#6b7280';
-    }
-  };
-
-  const getPriorityIcon = (priority) => {
-    switch (priority) {
-      case 'High': return 'alert-circle';
-      case 'Medium': return 'warning';
-      case 'Low': return 'information-circle';
-      default: return 'help-circle';
-    }
+  const priorityConfig = {
+    'High': { bg: '#fef2f2', color: '#ef4444', gradient: ['#ef4444', '#f87171'] },
+    'Medium': { bg: '#fffbeb', color: '#f59e0b', gradient: ['#f59e0b', '#fbbf24'] },
+    'Low': { bg: '#ecfdf5', color: '#10b981', gradient: ['#10b981', '#34d399'] },
   };
 
   const handleCreateTicket = () => {
@@ -101,11 +53,7 @@ const TicketsScreen = () => {
       status: 'Open',
       priority: newTicket.priority,
       dateTime: new Date().toLocaleString('en-GB', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
+        year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
       }).replace(',', ''),
       assignedTo: 'Auto-assigned',
     };
@@ -117,20 +65,26 @@ const TicketsScreen = () => {
   };
 
   const renderTicketCard = (ticket) => {
+    const status = statusConfig[ticket.status];
+    const priority = priorityConfig[ticket.priority];
+
     return (
-      <View key={ticket.id} style={styles.ticketCard}>
+      <TouchableOpacity key={ticket.id} style={styles.ticketCard} activeOpacity={0.7}>
         <View style={styles.ticketHeader}>
-          <View style={styles.ticketIdContainer}>
-            <Ionicons name="receipt-outline" size={20} color="#1a365d" />
-            <Text style={styles.ticketId}>{ticket.id}</Text>
-          </View>
-          <View style={styles.statusPriorityContainer}>
-            <View style={[styles.priorityBadge, { backgroundColor: getPriorityColor(ticket.priority) }]}>
-              <Ionicons name={getPriorityIcon(ticket.priority)} size={12} color="#ffffff" />
-              <Text style={styles.priorityText}>{ticket.priority}</Text>
+          <View style={styles.ticketIdRow}>
+            <View style={[styles.ticketIdBadge, { backgroundColor: '#eef2ff' }]}>
+              <Ionicons name="ticket" size={14} color="#6366f1" />
+              <Text style={styles.ticketId}>{ticket.id}</Text>
             </View>
-            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(ticket.status) }]}>
-              <Text style={styles.statusText}>{ticket.status}</Text>
+          </View>
+          <View style={styles.badgesRow}>
+            <View style={[styles.priorityBadge, { backgroundColor: priority.bg }]}>
+              <View style={[styles.priorityDot, { backgroundColor: priority.color }]} />
+              <Text style={[styles.priorityText, { color: priority.color }]}>{ticket.priority}</Text>
+            </View>
+            <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
+              <Ionicons name={status.icon} size={12} color={status.color} />
+              <Text style={[styles.statusText, { color: status.color }]}>{ticket.status}</Text>
             </View>
           </View>
         </View>
@@ -138,22 +92,21 @@ const TicketsScreen = () => {
         <Text style={styles.ticketDescription}>{ticket.description}</Text>
 
         <View style={styles.ticketFooter}>
-          <View style={styles.ticketInfo}>
-            <View style={styles.infoItem}>
-              <Ionicons name="calendar-outline" size={16} color="#718096" />
-              <Text style={styles.infoText}>{ticket.dateTime}</Text>
+          <View style={styles.ticketMeta}>
+            <View style={styles.metaItem}>
+              <Ionicons name="calendar-outline" size={14} color="#94a3b8" />
+              <Text style={styles.metaText}>{ticket.dateTime}</Text>
             </View>
-            <View style={styles.infoItem}>
-              <Ionicons name="person-outline" size={16} color="#718096" />
-              <Text style={styles.infoText}>{ticket.assignedTo}</Text>
+            <View style={styles.metaItem}>
+              <Ionicons name="person-outline" size={14} color="#94a3b8" />
+              <Text style={styles.metaText}>{ticket.assignedTo}</Text>
             </View>
           </View>
-          <TouchableOpacity style={styles.viewButton}>
-            <Text style={styles.viewButtonText}>View Details</Text>
-            <Ionicons name="chevron-forward" size={16} color="#3182ce" />
-          </TouchableOpacity>
+          <View style={styles.viewMoreBtn}>
+            <Ionicons name="chevron-forward" size={18} color="#6366f1" />
+          </View>
         </View>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -163,42 +116,57 @@ const TicketsScreen = () => {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <LinearGradient
-        colors={['#8b5cf6', '#7c3aed']}
+        colors={['#ec4899', '#be185d']}
         style={styles.header}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
       >
-        <Text style={styles.headerTitle}>Support Tickets</Text>
-        <Text style={styles.headerSubtitle}>Manage and track support requests</Text>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.headerTitle}>Support Tickets 🎫</Text>
+            <Text style={styles.headerSubtitle}>Track and manage requests</Text>
+          </View>
+          <TouchableOpacity 
+            style={styles.addBtn} 
+            onPress={() => setModalVisible(true)}
+          >
+            <Ionicons name="add" size={22} color="#ec4899" />
+          </TouchableOpacity>
+        </View>
         
-        {/* Summary Stats */}
-        <View style={styles.summaryContainer}>
-          <View style={styles.summaryItem}>
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryCard}>
+            <View style={[styles.summaryIconBg, { backgroundColor: 'rgba(239, 68, 68, 0.3)' }]}>
+              <Ionicons name="alert-circle" size={18} color="#ffffff" />
+            </View>
             <Text style={styles.summaryValue}>{openTickets}</Text>
             <Text style={styles.summaryLabel}>Open</Text>
           </View>
-          <View style={styles.summaryItem}>
+          <View style={styles.summaryCard}>
+            <View style={[styles.summaryIconBg, { backgroundColor: 'rgba(245, 158, 11, 0.3)' }]}>
+              <Ionicons name="time" size={18} color="#ffffff" />
+            </View>
             <Text style={styles.summaryValue}>{inProgressTickets}</Text>
             <Text style={styles.summaryLabel}>In Progress</Text>
           </View>
-          <View style={styles.summaryItem}>
+          <View style={styles.summaryCard}>
+            <View style={[styles.summaryIconBg, { backgroundColor: 'rgba(16, 185, 129, 0.3)' }]}>
+              <Ionicons name="checkmark-circle" size={18} color="#ffffff" />
+            </View>
             <Text style={styles.summaryValue}>{resolvedTickets}</Text>
             <Text style={styles.summaryLabel}>Resolved</Text>
           </View>
         </View>
-
-        <TouchableOpacity 
-          style={styles.createButton} 
-          onPress={() => setModalVisible(true)}
-        >
-          <Ionicons name="add" size={20} color="#ffffff" />
-          <Text style={styles.createButtonText}>Create Ticket</Text>
-        </TouchableOpacity>
       </LinearGradient>
 
-      {/* Tickets List */}
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        style={styles.scrollView} 
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
         {tickets.map((ticket) => renderTicketCard(ticket))}
+        <View style={styles.bottomSpacer} />
       </ScrollView>
 
       {/* Create Ticket Modal */}
@@ -208,48 +176,64 @@ const TicketsScreen = () => {
         visible={modalVisible}
         onRequestClose={() => setModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.modalOverlay}
+        >
           <View style={styles.modalContent}>
+            <View style={styles.modalHandle} />
+            
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Create New Ticket</Text>
+              <Text style={styles.modalTitle}>New Ticket</Text>
               <TouchableOpacity 
                 onPress={() => setModalVisible(false)}
                 style={styles.closeButton}
               >
-                <Ionicons name="close" size={24} color="#718096" />
+                <Ionicons name="close" size={24} color="#64748b" />
               </TouchableOpacity>
             </View>
 
             <View style={styles.formContainer}>
-              <Text style={styles.inputLabel}>Description *</Text>
+              <Text style={styles.inputLabel}>Description</Text>
               <TextInput
                 style={styles.textInput}
-                placeholder="Describe the issue or request..."
+                placeholder="Describe the issue..."
+                placeholderTextColor="#94a3b8"
                 multiline={true}
                 numberOfLines={4}
                 value={newTicket.description}
                 onChangeText={(text) => setNewTicket({...newTicket, description: text})}
               />
 
-              <Text style={styles.inputLabel}>Priority</Text>
+              <Text style={styles.inputLabel}>Priority Level</Text>
               <View style={styles.priorityContainer}>
-                {['High', 'Medium', 'Low'].map((priority) => (
-                  <TouchableOpacity
-                    key={priority}
-                    style={[
-                      styles.priorityOption,
-                      newTicket.priority === priority && styles.priorityOptionSelected
-                    ]}
-                    onPress={() => setNewTicket({...newTicket, priority})}
-                  >
-                    <Text style={[
-                      styles.priorityOptionText,
-                      newTicket.priority === priority && styles.priorityOptionTextSelected
-                    ]}>
-                      {priority}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {['High', 'Medium', 'Low'].map((priority) => {
+                  const config = priorityConfig[priority];
+                  const isSelected = newTicket.priority === priority;
+                  return (
+                    <TouchableOpacity
+                      key={priority}
+                      style={[
+                        styles.priorityOption,
+                        isSelected && { backgroundColor: config.bg, borderColor: config.color }
+                      ]}
+                      onPress={() => setNewTicket({...newTicket, priority})}
+                    >
+                      <View style={[
+                        styles.priorityRadio,
+                        isSelected && { backgroundColor: config.color, borderColor: config.color }
+                      ]}>
+                        {isSelected && <Ionicons name="checkmark" size={12} color="#ffffff" />}
+                      </View>
+                      <Text style={[
+                        styles.priorityOptionText,
+                        isSelected && { color: config.color, fontWeight: '600' }
+                      ]}>
+                        {priority}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
               <View style={styles.modalButtons}>
@@ -263,12 +247,20 @@ const TicketsScreen = () => {
                   style={styles.submitButton}
                   onPress={handleCreateTicket}
                 >
-                  <Text style={styles.submitButtonText}>Create Ticket</Text>
+                  <LinearGradient
+                    colors={['#ec4899', '#be185d']}
+                    style={styles.submitGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  >
+                    <Ionicons name="add" size={18} color="#ffffff" />
+                    <Text style={styles.submitButtonText}>Create Ticket</Text>
+                  </LinearGradient>
                 </TouchableOpacity>
               </View>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -277,69 +269,86 @@ const TicketsScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#f1f5f9',
   },
   header: {
-    padding: 20,
-    paddingBottom: 25,
+    paddingTop: Platform.OS === 'ios' ? 60 : 45,
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
   },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    marginBottom: 5,
-  },
-  headerSubtitle: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginBottom: 20,
-  },
-  summaryContainer: {
+  headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 20,
   },
-  summaryItem: {
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#ffffff',
+    letterSpacing: -0.5,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 4,
+  },
+  addBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#ffffff',
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  summaryCard: {
     flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 16,
+    padding: 14,
+    marginHorizontal: 4,
+    alignItems: 'center',
+  },
+  summaryIconBg: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
   },
   summaryValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 22,
+    fontWeight: '700',
     color: '#ffffff',
   },
   summaryLabel: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginTop: 5,
-  },
-  createButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 20,
-    alignSelf: 'flex-start',
-  },
-  createButtonText: {
-    color: '#ffffff',
-    marginLeft: 8,
-    fontWeight: '600',
+    fontSize: 10,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 2,
+    fontWeight: '500',
   },
   scrollView: {
     flex: 1,
-    paddingHorizontal: 20,
+  },
+  scrollContent: {
+    padding: 16,
   },
   ticketCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 20,
-    marginBottom: 15,
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 14,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 10,
     elevation: 3,
   },
   ticketHeader: {
@@ -348,184 +357,227 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  ticketIdContainer: {
+  ticketIdRow: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  ticketId: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1a365d',
-    marginLeft: 8,
-  },
-  statusPriorityContainer: {
+  ticketIdBadge: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  ticketId: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#6366f1',
+    marginLeft: 6,
+  },
+  badgesRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   priorityBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    marginRight: 6,
+  },
+  priorityDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 5,
   },
   priorityText: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#ffffff',
   },
   statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingVertical: 5,
+    borderRadius: 10,
   },
   statusText: {
     fontSize: 10,
     fontWeight: '600',
-    color: '#ffffff',
+    marginLeft: 4,
   },
   ticketDescription: {
     fontSize: 14,
-    color: '#2d3748',
-    lineHeight: 20,
-    marginBottom: 15,
+    color: '#334155',
+    lineHeight: 21,
+    marginBottom: 14,
+    fontWeight: '400',
   },
   ticketFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
   },
-  ticketInfo: {
+  ticketMeta: {
     flex: 1,
   },
-  infoItem: {
+  metaItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 5,
+    marginBottom: 4,
   },
-  infoText: {
-    fontSize: 12,
-    color: '#718096',
-    marginLeft: 8,
+  metaText: {
+    fontSize: 11,
+    color: '#94a3b8',
+    marginLeft: 6,
+    fontWeight: '500',
   },
-  viewButton: {
-    flexDirection: 'row',
+  viewMoreBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#eef2ff',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-    backgroundColor: '#f7fafc',
+    justifyContent: 'center',
   },
-  viewButtonText: {
-    fontSize: 12,
-    color: '#3182ce',
-    fontWeight: '600',
-    marginRight: 4,
+  bottomSpacer: {
+    height: 20,
   },
   // Modal Styles
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+    justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: '#ffffff',
-    borderRadius: 15,
-    margin: 20,
-    width: '90%',
-    maxHeight: '80%',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 24,
+    paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+    maxHeight: '85%',
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginTop: 12,
+    marginBottom: 16,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    marginBottom: 24,
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1a365d',
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1e293b',
+    letterSpacing: -0.3,
   },
   closeButton: {
-    padding: 5,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#f1f5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  formContainer: {
-    padding: 20,
-  },
+  formContainer: {},
   inputLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#2d3748',
+    color: '#475569',
     marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   textInput: {
-    borderWidth: 1,
+    borderWidth: 1.5,
     borderColor: '#e2e8f0',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 14,
-    color: '#2d3748',
+    borderRadius: 14,
+    padding: 14,
+    fontSize: 15,
+    color: '#1e293b',
     marginBottom: 20,
     textAlignVertical: 'top',
+    minHeight: 100,
+    backgroundColor: '#f8fafc',
   },
   priorityContainer: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 30,
+    marginBottom: 28,
   },
   priorityOption: {
     flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 15,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: '#e2e8f0',
+    marginRight: 10,
+    backgroundColor: '#ffffff',
   },
-  priorityOptionSelected: {
-    backgroundColor: '#8b5cf6',
-    borderColor: '#8b5cf6',
+  priorityRadio: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#cbd5e1',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
   },
   priorityOptionText: {
-    fontSize: 14,
-    color: '#718096',
-    fontWeight: '600',
-  },
-  priorityOptionTextSelected: {
-    color: '#ffffff',
+    fontSize: 13,
+    color: '#64748b',
+    fontWeight: '500',
   },
   modalButtons: {
     flexDirection: 'row',
-    gap: 10,
   },
   cancelButton: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1.5,
     borderColor: '#e2e8f0',
     alignItems: 'center',
+    marginRight: 12,
+    backgroundColor: '#ffffff',
   },
   cancelButtonText: {
-    fontSize: 14,
-    color: '#718096',
+    fontSize: 15,
+    color: '#64748b',
     fontWeight: '600',
   },
   submitButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    backgroundColor: '#8b5cf6',
+    flex: 1.5,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  submitGradient: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
   },
   submitButtonText: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#ffffff',
     fontWeight: '600',
+    marginLeft: 6,
   },
 });
 
