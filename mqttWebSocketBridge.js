@@ -1,15 +1,15 @@
-const mqtt = require('mqtt');
-const WebSocket = require('ws');
+import mqtt from 'mqtt';
+import { WebSocketServer } from 'ws';
 
 // WebSocket Server setup - bind to all interfaces
-const wss = new WebSocket.Server({ 
+const wss = new WebSocketServer({ 
   port: 8080,
   host: '0.0.0.0'  // Accept connections from any IP
 });
 console.log('WebSocket server started on port 8080 (all interfaces)');
 
 // MQTT setup
-const brokerUrl = 'mqtt://192.168.43.109:1883';
+const brokerUrl = 'mqtt://192.168.43.147:1883';
 const topic = 'pzem1/all';
 const additionalTopics = ['pzem2/all', 'pzem3/all'];
 const client = mqtt.connect(brokerUrl);
@@ -79,7 +79,7 @@ client.on('message', (topic, message) => {
     });
 
     clients.forEach((ws) => {
-      if (ws.readyState === WebSocket.OPEN) {
+      if (ws.readyState === 1) {
         ws.send(dataToSend);
       }
     });

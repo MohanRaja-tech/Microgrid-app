@@ -1,4 +1,5 @@
-const { Client } = require('pg');
+import pkg from 'pg';
+const { Client } = pkg;
 
 const client = new Client({
     host: '192.168.43.147',

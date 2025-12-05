@@ -1,4 +1,4 @@
-const mqtt = require('mqtt');
+import mqtt from 'mqtt';
 
 // Replace with your friend's laptop IP address and the port (default is 1883)
 const brokerUrl = 'mqtt://192.168.43.109:1883'; // Update with the correct IP and port

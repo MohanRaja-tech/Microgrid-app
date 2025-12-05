@@ -1,4 +1,5 @@
-const { Client } = require("pg");
+import pkg from 'pg';
+const { Client } = pkg;
 
 // Database configuration
 const dbConfig = {
@@ -21,4 +22,4 @@ client.connect()
     .then(() => console.log("Connected to PostgreSQL"))
     .catch(err => console.error("Connection error", err));
 
-module.exports = { client, dbConfig, tableConfig };
+export { client, dbConfig, tableConfig };

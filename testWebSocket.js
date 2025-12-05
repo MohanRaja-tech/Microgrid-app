@@ -1,4 +1,4 @@
-const WebSocket = require('ws');
+import WebSocket from 'ws';
 
 // Test WebSocket connection to the bridge
 const ws = new WebSocket('ws://192.168.43.205:8080');
