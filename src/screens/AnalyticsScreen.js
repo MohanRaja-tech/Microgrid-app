@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Path, Defs, LinearGradient as SvgLinearGradient, Stop, Circle, Line, Text as SvgText } from 'react-native-svg';
 import AnalyticsService from '../services/AnalyticsService';
 import * as FileSystem from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
@@ -438,48 +439,54 @@ const AnalyticsScreen = () => {
       };
     }
 
-    // Group data by time periods
-    const groupedData = {};
-    
-    rawData.forEach(item => {
-      const timestamp = item.timestamp || item.time;
-      if (!timestamp) return;
-      
-      const date = new Date(timestamp);
-      let dateKey;
-      
-      // Smart grouping based on data volume
-      if (rawData.length > 500) {
-        // Group by day for large datasets
-        dateKey = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-      } else if (rawData.length > 100) {
-        // Group by hour for medium datasets
-        dateKey = `${date.getHours()}:00`;
-      } else {
-        // Use individual timestamps for small datasets
-        dateKey = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-      }
-      
-      if (!groupedData[dateKey]) {
-        groupedData[dateKey] = { values: [], count: 0 };
-      }
-      
-      // Get the value for the selected column
-      const value = parseFloat(item[columnName]) || 0;
-      
-      groupedData[dateKey].values.push(value);
-      groupedData[dateKey].count++;
+    // Sort data by timestamp first
+    const sortedData = [...rawData].sort((a, b) => {
+      const timeA = new Date(a.timestamp || a.time).getTime();
+      const timeB = new Date(b.timestamp || b.time).getTime();
+      return timeA - timeB;
     });
 
-    // Convert to chart data format
-    const chartData = Object.keys(groupedData).map(label => {
-      const group = groupedData[label];
-      const avgValue = group.values.reduce((a, b) => a + b, 0) / group.count;
-      return {
+    // Determine the time range
+    const firstTime = new Date(sortedData[0].timestamp || sortedData[0].time);
+    const lastTime = new Date(sortedData[sortedData.length - 1].timestamp || sortedData[sortedData.length - 1].time);
+    const timeRangeHours = (lastTime - firstTime) / (1000 * 60 * 60);
+    
+    // Group data to get ~20-30 points for a nice wave chart
+    const targetPoints = 25;
+    const groupSize = Math.max(1, Math.floor(sortedData.length / targetPoints));
+    
+    const chartData = [];
+    
+    for (let i = 0; i < sortedData.length; i += groupSize) {
+      const group = sortedData.slice(i, Math.min(i + groupSize, sortedData.length));
+      
+      // Calculate average value for this group
+      const values = group.map(item => parseFloat(item[columnName]) || 0);
+      const avgValue = values.reduce((a, b) => a + b, 0) / values.length;
+      
+      // Get the timestamp of the middle item in the group
+      const midItem = group[Math.floor(group.length / 2)];
+      const timestamp = new Date(midItem.timestamp || midItem.time);
+      
+      // Format label based on time range
+      let label;
+      if (timeRangeHours <= 24) {
+        // Same day - show time
+        label = timestamp.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+      } else if (timeRangeHours <= 168) {
+        // Within a week - show day and time
+        label = timestamp.toLocaleDateString('en-US', { weekday: 'short', hour: '2-digit' });
+      } else {
+        // Longer range - show date
+        label = timestamp.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      }
+      
+      chartData.push({
         label: label,
-        value: avgValue
-      };
-    });
+        value: avgValue,
+        timestamp: timestamp
+      });
+    }
 
     // Calculate statistics for the selected column
     const allValues = rawData.map(item => parseFloat(item[columnName]) || 0).filter(v => !isNaN(v) && v !== 0);
@@ -1030,23 +1037,23 @@ const AnalyticsScreen = () => {
                   </View>
                 </View>
 
-                {/* Line Chart Area */}
+                {/* Wave/Area Chart */}
                 <View style={styles.chartContainer}>
                   {/* Y-Axis Labels */}
                   <View style={styles.yAxisContainer}>
-                    <Text style={styles.yAxisLabel}>{maxValue.toFixed(1)}</Text>
-                    <Text style={styles.yAxisLabel}>{(maxValue * 0.75).toFixed(1)}</Text>
-                    <Text style={styles.yAxisLabel}>{(maxValue * 0.5).toFixed(1)}</Text>
-                    <Text style={styles.yAxisLabel}>{(maxValue * 0.25).toFixed(1)}</Text>
+                    <Text style={styles.yAxisLabel}>{maxValue.toFixed(0)}</Text>
+                    <Text style={styles.yAxisLabel}>{(maxValue * 0.75).toFixed(0)}</Text>
+                    <Text style={styles.yAxisLabel}>{(maxValue * 0.5).toFixed(0)}</Text>
+                    <Text style={styles.yAxisLabel}>{(maxValue * 0.25).toFixed(0)}</Text>
                     <Text style={styles.yAxisLabel}>0</Text>
                   </View>
                   
-                  {/* Scrollable Chart Grid and Bars */}
+                  {/* Scrollable Wave Chart */}
                   <ScrollView 
                     horizontal 
                     showsHorizontalScrollIndicator={true}
                     style={styles.chartScrollView}
-                    contentContainerStyle={[styles.chartScrollContent, { minWidth: Math.max(barData.length * 60, width - 100) }]}
+                    contentContainerStyle={[styles.chartScrollContent, { minWidth: Math.max(barData.length * 45, width - 80) }]}
                   >
                     <View style={styles.chartArea}>
                       {/* Grid Lines */}
@@ -1056,41 +1063,154 @@ const AnalyticsScreen = () => {
                         ))}
                       </View>
                       
-                      {/* Bars and Labels Container */}
-                      <View style={styles.barsAndLabelsContainer}>
-                        {/* Bars Row */}
-                        <View style={styles.barsRow}>
-                          {barData.map((item, index) => {
-                            const heightPercent = maxValue > 0 ? (item.value / maxValue) * 100 : 0;
-                            return (
-                              <View key={index} style={[styles.barColumn, { width: 55 }]}>
-                                <Text style={[styles.barValueText, { color: columnInfo?.color || '#6366f1' }]}>
-                                  {item.value.toFixed(2)}
-                                </Text>
-                                <View style={styles.barOuter}>
-                                  <LinearGradient
-                                    colors={[columnInfo?.color || '#6366f1', `${columnInfo?.color}99` || '#8b5cf6']}
-                                    style={[styles.barInner, { height: `${Math.max(heightPercent, 2)}%` }]}
-                                    start={{ x: 0, y: 0 }}
-                                    end={{ x: 0, y: 1 }}
-                                  />
-                                </View>
-                              </View>
-                            );
-                          })}
-                        </View>
+                      {/* SVG Wave Chart */}
+                      {(() => {
+                        const chartHeight = 180;
+                        const chartWidth = Math.max(barData.length * 45, width - 100);
+                        const paddingX = 20;
+                        const paddingY = 15;
+                        const chartColor = columnInfo?.color || '#6366f1';
                         
-                        {/* X-Axis Labels Row - Separate from bars */}
-                        <View style={styles.xAxisLabelsRow}>
-                          {barData.map((item, index) => (
-                            <View key={index} style={[styles.xAxisLabelContainer, { width: 55 }]}>
-                              <Text style={styles.xAxisLabelText} numberOfLines={2}>
-                                {item.label}
-                              </Text>
+                        // Handle single point or no data
+                        if (barData.length < 2) {
+                          const singlePoint = barData[0] || { value: 0, label: 'No Data' };
+                          const centerX = chartWidth / 2;
+                          const centerY = chartHeight / 2;
+                          
+                          return (
+                            <View style={{ alignItems: 'center', justifyContent: 'center', height: chartHeight + 40 }}>
+                              <Svg width={chartWidth} height={chartHeight + 40}>
+                                <Circle cx={centerX} cy={centerY} r={8} fill={chartColor} opacity={0.3} />
+                                <Circle cx={centerX} cy={centerY} r={5} fill="#ffffff" stroke={chartColor} strokeWidth={2} />
+                                <SvgText x={centerX} y={centerY + 25} fontSize={12} fill="#64748b" textAnchor="middle">
+                                  {singlePoint.label}
+                                </SvgText>
+                                <SvgText x={centerX} y={centerY - 15} fontSize={11} fill={chartColor} textAnchor="middle" fontWeight="600">
+                                  {singlePoint.value.toFixed(2)}
+                                </SvgText>
+                              </Svg>
                             </View>
-                          ))}
-                        </View>
-                      </View>
+                          );
+                        }
+                        
+                        const pointSpacing = (chartWidth - paddingX * 2) / (barData.length - 1);
+                        
+                        // Generate points with proper scaling
+                        const points = barData.map((item, index) => {
+                          const x = paddingX + (index * pointSpacing);
+                          const normalizedValue = maxValue > 0 ? item.value / maxValue : 0;
+                          const y = paddingY + (1 - normalizedValue) * (chartHeight - paddingY * 2);
+                          return { x, y, value: item.value, label: item.label };
+                        });
+                        
+                        // Create smooth catmull-rom spline path
+                        const createSmoothPath = (pts) => {
+                          if (pts.length < 2) return '';
+                          
+                          let path = `M ${pts[0].x} ${pts[0].y}`;
+                          
+                          for (let i = 0; i < pts.length - 1; i++) {
+                            const p0 = pts[i - 1] || pts[i];
+                            const p1 = pts[i];
+                            const p2 = pts[i + 1];
+                            const p3 = pts[i + 2] || p2;
+                            
+                            // Control points for smooth curve
+                            const cp1x = p1.x + (p2.x - p0.x) / 6;
+                            const cp1y = p1.y + (p2.y - p0.y) / 6;
+                            const cp2x = p2.x - (p3.x - p1.x) / 6;
+                            const cp2y = p2.y - (p3.y - p1.y) / 6;
+                            
+                            path += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`;
+                          }
+                          
+                          return path;
+                        };
+                        
+                        // Create area fill path
+                        const createAreaPath = (pts) => {
+                          if (pts.length < 2) return '';
+                          
+                          const linePath = createSmoothPath(pts);
+                          const bottomY = chartHeight - paddingY;
+                          const lastPoint = pts[pts.length - 1];
+                          const firstPoint = pts[0];
+                          
+                          return `${linePath} L ${lastPoint.x} ${bottomY} L ${firstPoint.x} ${bottomY} Z`;
+                        };
+                        
+                        const linePath = createSmoothPath(points);
+                        const areaPath = createAreaPath(points);
+                        
+                        // Show fewer labels if many points
+                        const labelStep = points.length > 15 ? Math.ceil(points.length / 10) : 1;
+                        
+                        return (
+                          <Svg width={chartWidth} height={chartHeight + 45}>
+                            <Defs>
+                              <SvgLinearGradient id="waveAreaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+                                <Stop offset="0%" stopColor={chartColor} stopOpacity="0.35" />
+                                <Stop offset="40%" stopColor={chartColor} stopOpacity="0.15" />
+                                <Stop offset="100%" stopColor={chartColor} stopOpacity="0.02" />
+                              </SvgLinearGradient>
+                            </Defs>
+                            
+                            {/* Area Fill */}
+                            <Path
+                              d={areaPath}
+                              fill="url(#waveAreaGradient)"
+                            />
+                            
+                            {/* Main Line */}
+                            <Path
+                              d={linePath}
+                              stroke={chartColor}
+                              strokeWidth={2.5}
+                              fill="none"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                            
+                            {/* Data Points - show every few points */}
+                            {points.filter((_, i) => i % Math.max(1, Math.floor(points.length / 12)) === 0 || i === points.length - 1).map((point, index) => (
+                              <React.Fragment key={index}>
+                                <Circle
+                                  cx={point.x}
+                                  cy={point.y}
+                                  r={5}
+                                  fill={chartColor}
+                                  opacity={0.15}
+                                />
+                                <Circle
+                                  cx={point.x}
+                                  cy={point.y}
+                                  r={3.5}
+                                  fill="#ffffff"
+                                  stroke={chartColor}
+                                  strokeWidth={2}
+                                />
+                              </React.Fragment>
+                            ))}
+                            
+                            {/* X-Axis Labels */}
+                            {points.map((point, index) => (
+                              index % labelStep === 0 || index === points.length - 1 ? (
+                                <SvgText
+                                  key={`label-${index}`}
+                                  x={point.x}
+                                  y={chartHeight + 18}
+                                  fontSize={9}
+                                  fill="#64748b"
+                                  textAnchor="middle"
+                                  fontWeight="500"
+                                >
+                                  {point.label}
+                                </SvgText>
+                              ) : null
+                            ))}
+                          </Svg>
+                        );
+                      })()}
                     </View>
                   </ScrollView>
                 </View>
@@ -1502,15 +1622,15 @@ const styles = StyleSheet.create({
   },
   chartContainer: {
     flexDirection: 'row',
-    height: 280,
+    height: 260,
     marginBottom: 16,
   },
   yAxisContainer: {
-    width: 45,
+    width: 40,
     justifyContent: 'space-between',
     paddingRight: 8,
-    paddingTop: 5,
-    paddingBottom: 45,
+    paddingTop: 10,
+    paddingBottom: 60,
   },
   yAxisLabel: {
     fontSize: 10,
@@ -1527,13 +1647,14 @@ const styles = StyleSheet.create({
   chartArea: {
     flex: 1,
     position: 'relative',
+    paddingTop: 5,
   },
   gridLines: {
     position: 'absolute',
-    top: 0,
+    top: 10,
     left: 0,
     right: 0,
-    bottom: 45,
+    height: 180,
     justifyContent: 'space-between',
   },
   gridLine: {
