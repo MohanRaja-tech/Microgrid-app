@@ -1,12 +1,12 @@
 import * as Notifications from 'expo-notifications';
 import { Platform, Alert } from 'react-native';
 
-// Configure notification behavior
+// Configure notification behavior - shows notifications even when app is in foreground
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
     shouldPlaySound: true,
-    shouldSetBadge: false,
+    shouldSetBadge: true, // Show badge count on app icon
   }),
 });
 
@@ -15,8 +15,11 @@ class NotificationService {
     this.lastNotifications = {
       voltage: {}, // Track last voltage alert for each meter
       powerFactor: {}, // Track last power factor alert for each meter
+      overcurrent: {}, // Track overcurrent alerts
+      frequency: {}, // Track frequency alerts
     };
     this.cooldownTime = 30000; // 30 seconds cooldown between same alerts
+    this.notificationCount = 0; // Track total notification count for badge
   }
 
   async initialize() {
@@ -103,6 +106,8 @@ class NotificationService {
 
   async sendNotification(title, body, data = {}) {
     try {
+      this.notificationCount++;
+      
       await Notifications.scheduleNotificationAsync({
         content: {
           title: title,
@@ -110,6 +115,9 @@ class NotificationService {
           data: data,
           sound: 'default',
           priority: Notifications.AndroidNotificationPriority.HIGH,
+          badge: this.notificationCount, // Update badge count
+          sticky: true, // Make notification persistent on Android
+          autoDismiss: false, // Don't auto-dismiss
         },
         trigger: null, // Show immediately
       });
@@ -117,6 +125,39 @@ class NotificationService {
       console.log('Notification sent:', title);
     } catch (error) {
       console.error('Error sending notification:', error);
+    }
+  }
+
+  // Clear all notifications
+  async clearAllNotifications() {
+    try {
+      await Notifications.dismissAllNotificationsAsync();
+      this.notificationCount = 0;
+      await Notifications.setBadgeCountAsync(0);
+      console.log('All notifications cleared');
+    } catch (error) {
+      console.error('Error clearing notifications:', error);
+    }
+  }
+
+  // Get badge count
+  async getBadgeCount() {
+    try {
+      return await Notifications.getBadgeCountAsync();
+    } catch (error) {
+      console.error('Error getting badge count:', error);
+      return 0;
+    }
+  }
+
+  // Reset badge count
+  async resetBadgeCount() {
+    try {
+      this.notificationCount = 0;
+      await Notifications.setBadgeCountAsync(0);
+      console.log('Badge count reset');
+    } catch (error) {
+      console.error('Error resetting badge count:', error);
     }
   }
 

@@ -8,7 +8,7 @@ class WebSocketService {
     this.reconnectInterval = 3000; // 3 seconds
   }
 
-  connect(url = 'ws://192.168.43.147:8080') {
+  connect(url = 'ws://192.168.43.205:8080') {
     try {
       this.ws = new WebSocket(url);
 

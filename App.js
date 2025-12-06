@@ -1,10 +1,11 @@
-import React from 'react';
-import { View, StyleSheet, Platform, LogBox } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, StyleSheet, Platform, LogBox, AppState } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Notifications from 'expo-notifications';
 
 // Disable all LogBox notifications (yellow boxes and red boxes in development)
 LogBox.ignoreAllLogs(true);
@@ -16,6 +17,18 @@ import WindScreen from './src/screens/WindScreen';
 import TicketsScreen from './src/screens/TicketsScreen';
 import AnalyticsScreen from './src/screens/AnalyticsScreen';
 import AIChatScreen from './src/screens/AIChatScreen';
+import BackgroundTaskService from './src/services/BackgroundTaskService';
+import NotificationService from './src/services/NotificationService';
+import WebSocketService from './src/services/WebSocketService';
+
+// Configure notifications to show even when app is in foreground
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
 
 const Tab = createBottomTabNavigator();
 
@@ -39,6 +52,56 @@ const TabIcon = ({ focused, iconName, color, gradientColors }) => {
 };
 
 export default function App() {
+  const appState = useRef(AppState.currentState);
+
+  useEffect(() => {
+    // Initialize notification service
+    NotificationService.initialize();
+
+    // Register background fetch task
+    BackgroundTaskService.registerBackgroundFetchAsync();
+
+    // Keep WebSocket connection alive
+    WebSocketService.connect();
+
+    // Listen to app state changes
+    const subscription = AppState.addEventListener('change', nextAppState => {
+      if (
+        appState.current.match(/inactive|background/) &&
+        nextAppState === 'active'
+      ) {
+        console.log('App has come to the foreground!');
+        // Reconnect WebSocket when app comes to foreground
+        if (!WebSocketService.isConnected) {
+          WebSocketService.connect();
+        }
+      } else if (nextAppState.match(/inactive|background/)) {
+        console.log('App has gone to the background!');
+        // Keep WebSocket connection alive in background
+      }
+
+      appState.current = nextAppState;
+    });
+
+    // Handle notification responses (when user taps on notification)
+    const notificationResponseSubscription = Notifications.addNotificationResponseReceivedListener(
+      response => {
+        console.log('Notification tapped:', response);
+        const data = response.notification.request.content.data;
+        // You can navigate to specific screen based on notification data
+        if (data.type === 'voltage_alert' || data.type === 'powerFactor') {
+          // Navigate to Live screen
+          console.log('Navigate to Live screen for meter:', data.meterId);
+        }
+      }
+    );
+
+    return () => {
+      subscription.remove();
+      notificationResponseSubscription.remove();
+    };
+  }, []);
+
   return (
     <NavigationContainer>
       <StatusBar style="light" backgroundColor="#0f172a" />
