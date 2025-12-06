@@ -50,13 +50,13 @@ const HomeScreen = () => {
   const [connectionStatus, setConnectionStatus] = useState('Disconnected');
   
   // State for energy tracking (in Units - 1 kWh = 1 Unit)
-  const [dailyUnits, setDailyUnits] = useState(0); // Daily energy in Units
-  const [yearlyUnits, setYearlyUnits] = useState(0); // Yearly energy in Units
+  const [dailyUnits, setDailyUnits] = useState(0); // Daily energy in Units from live MQTT data
   const [lastUpdateDate, setLastUpdateDate] = useState(null);
   
-  // State for user input product profit calculation
-  const [userInputUnits, setUserInputUnits] = useState('');
-  const [confirmedUserUnits, setConfirmedUserUnits] = useState(0);
+  // State for user input product profit calculation (power WITHOUT product)
+  const [userInputKW, setUserInputKW] = useState(''); // User input in kW
+  const [confirmedUserKW, setConfirmedUserKW] = useState(0); // User's power in kW without product
+  const [confirmedUserUnits, setConfirmedUserUnits] = useState(0); // Converted to yearly units (kW × 24 × 365)
 
   // Rate per Unit (₹6 per Unit/kWh)
   const ratePerUnit = 6;
@@ -94,10 +94,12 @@ const HomeScreen = () => {
     };
   }, []);
 
-  // Calculate total energy (Units) from all meters
+  // Calculate total energy (Units) from meters 1, 2, and 3
   const calculateTotalMeterUnits = () => {
     let totalUnits = 0;
-    Object.values(meterData).forEach(meter => {
+    // Sum energy from meters 1, 2, and 3
+    [1, 2, 3].forEach(meterId => {
+      const meter = meterData[meterId];
       if (meter && meter.energy !== undefined) {
         totalUnits += meter.energy; // 1 kWh = 1 Unit
       }
@@ -105,88 +107,76 @@ const HomeScreen = () => {
     return totalUnits;
   };
 
-  // Load saved energy data on mount
+  // Load saved user input on mount
   useEffect(() => {
-    const loadEnergyData = async () => {
+    const loadUserInput = async () => {
       try {
         const savedData = await Storage.getItem('@home_energy_data_v3');
         if (savedData) {
           const data = JSON.parse(savedData);
-          const today = new Date().toDateString();
-          
-          if (data.lastUpdateDate !== today) {
-            // New day - use meter data
-            const meterUnits = calculateTotalMeterUnits();
-            setDailyUnits(meterUnits);
-            setLastUpdateDate(today);
-          } else {
-            setDailyUnits(data.dailyUnits || calculateTotalMeterUnits());
-            setLastUpdateDate(data.lastUpdateDate);
-          }
-          setYearlyUnits(data.yearlyUnits || 0);
-          setConfirmedUserUnits(data.confirmedUserUnits || 0);
-        } else {
-          setLastUpdateDate(new Date().toDateString());
-          const meterUnits = calculateTotalMeterUnits();
-          setDailyUnits(meterUnits);
-          setYearlyUnits(meterUnits * 365);
+          const savedKW = data.confirmedUserKW || 0;
+          setConfirmedUserKW(savedKW);
+          setUserInputKW(savedKW ? savedKW.toString() : '');
+          // Convert kW to yearly units: kW × 24 hours × 365 days
+          setConfirmedUserUnits(savedKW * 24 * 365);
         }
       } catch (error) {
-        console.log('Error loading energy data:', error);
-        // Set default values on error
-        const meterUnits = calculateTotalMeterUnits();
-        setDailyUnits(meterUnits);
-        setYearlyUnits(meterUnits * 365);
-        setLastUpdateDate(new Date().toDateString());
+        console.log('Error loading user input:', error);
       }
     };
-    loadEnergyData();
+    loadUserInput();
+    setLastUpdateDate(new Date().toDateString());
   }, []);
 
-  // Update daily and yearly units from meter data
+  // Update daily units from live MQTT meter data
   useEffect(() => {
     const meterUnits = calculateTotalMeterUnits();
     if (meterUnits > 0) {
-      setDailyUnits(meterUnits);
-      setYearlyUnits(meterUnits * 365); // Estimated yearly based on daily
+      setDailyUnits(meterUnits); // Live daily units from MQTT
     }
   }, [meterData]);
 
-  // Save energy data whenever it changes
+  // Save user input whenever it changes
   useEffect(() => {
-    const saveEnergyData = async () => {
+    const saveUserInput = async () => {
       try {
         const data = {
-          dailyUnits,
-          yearlyUnits,
-          lastUpdateDate: lastUpdateDate || new Date().toDateString(),
+          confirmedUserKW,
           confirmedUserUnits,
         };
         await Storage.setItem('@home_energy_data_v3', JSON.stringify(data));
       } catch (error) {
-        console.log('Error saving energy data:', error);
+        console.log('Error saving user input:', error);
       }
     };
-    if (lastUpdateDate) {
-      saveEnergyData();
+    if (confirmedUserKW > 0) {
+      saveUserInput();
     }
-  }, [dailyUnits, yearlyUnits, lastUpdateDate, confirmedUserUnits]);
+  }, [confirmedUserKW, confirmedUserUnits]);
 
   // Calculate money (₹6 per Unit)
-  const dailyMoney = dailyUnits * ratePerUnit; // Daily Units × ₹6
-  const yearlyMoney = yearlyUnits * ratePerUnit; // Yearly Units × ₹6
+  const dailyMoney = dailyUnits * ratePerUnit; // Daily Units (from live MQTT) × ₹6
   
-  // Product profit calculation
-  const userInputMoney = confirmedUserUnits * ratePerUnit; // User input units × ₹6
-  const productProfit = yearlyMoney - userInputMoney; // Live Yearly Money - User Input Money
+  // Calculate yearly values
+  const yearlyUnitsWithProduct = dailyUnits * 365; // Yearly units WITH product (extrapolated from daily)
+  const yearlyMoneyWithProduct = yearlyUnitsWithProduct * ratePerUnit; // Yearly money WITH product
+  
+  // User input represents yearly units WITHOUT product
+  const yearlyMoneyWithoutProduct = confirmedUserUnits * ratePerUnit; // Money earned per year WITHOUT product (user input × ₹6)
+  
+  // Product profit calculation (savings by using the product)
+  const productProfit = yearlyMoneyWithoutProduct - yearlyMoneyWithProduct; // Savings = (Without product) - (With product)
 
   // Handle user input - auto calculate on input change
   const handleUserInputChange = (value) => {
-    setUserInputUnits(value);
-    const unitsValue = parseFloat(value);
-    if (!isNaN(unitsValue) && unitsValue >= 0) {
-      setConfirmedUserUnits(unitsValue);
+    setUserInputKW(value);
+    const kwValue = parseFloat(value);
+    if (!isNaN(kwValue) && kwValue >= 0) {
+      setConfirmedUserKW(kwValue);
+      // Convert kW to yearly units: kW × 24 hours/day × 365 days/year = kWh/year
+      setConfirmedUserUnits(kwValue * 24 * 365);
     } else {
+      setConfirmedUserKW(0);
       setConfirmedUserUnits(0);
     }
   };
@@ -299,9 +289,9 @@ const HomeScreen = () => {
                 <Ionicons name="calendar" size={24} color="#ffffff" />
               </View>
               <View style={styles.profitCardContent}>
-                <Text style={styles.profitCardLabel}>Money Earned Per Year</Text>
-                <Text style={styles.profitCardValue}>₹{formatIndianNumber(yearlyMoney)}</Text>
-                <Text style={styles.profitCardSubtext}>Based on {formatIndianNumber(yearlyUnits)} Units yearly</Text>
+                <Text style={styles.profitCardLabel}>Money Earned Per Year (Without Product)</Text>
+                <Text style={styles.profitCardValue}>₹{formatIndianNumber(yearlyMoneyWithoutProduct)}</Text>
+                <Text style={styles.profitCardSubtext}>Based on {formatIndianNumber(confirmedUserUnits)} Units yearly</Text>
               </View>
             </LinearGradient>
           </View>
@@ -331,37 +321,46 @@ const HomeScreen = () => {
               <Ionicons name="calculator" size={20} color="#6366f1" />
               <Text style={styles.userInputTitle}>Calculate Product Profit</Text>
             </View>
+            <Text style={styles.userInputDescription}>Enter your power consumption WITHOUT using our product:</Text>
             
             <View style={styles.userInputRow}>
               <View style={styles.inputWrapper}>
                 <TextInput
                   style={styles.energyInput}
-                  placeholder="Enter Units (kWh)"
+                  placeholder="Enter Power (kW)"
                   placeholderTextColor="#94a3b8"
-                  value={userInputUnits}
+                  value={userInputKW}
                   onChangeText={handleUserInputChange}
                   keyboardType="decimal-pad"
                 />
-                <Text style={styles.inputUnit}>Units</Text>
+                <Text style={styles.inputUnit}>kW</Text>
               </View>
             </View>
 
             {confirmedUserUnits > 0 && (
               <View style={styles.calculationDisplay}>
                 <View style={styles.calcRow}>
-                  <Text style={styles.calcLabel}>Your Input:</Text>
+                  <Text style={styles.calcLabel}>Your Input Power:</Text>
+                  <Text style={styles.calcValue}>{formatIndianNumber(confirmedUserKW)} kW</Text>
+                </View>
+                <View style={styles.calcRow}>
+                  <Text style={styles.calcLabel}>Yearly Units (Without Product):</Text>
                   <Text style={styles.calcValue}>{formatIndianNumber(confirmedUserUnits)} Units</Text>
                 </View>
                 <View style={styles.calcRow}>
-                  <Text style={styles.calcLabel}>Your Input Money (×₹{ratePerUnit}):</Text>
-                  <Text style={styles.calcValue}>₹{formatIndianNumber(userInputMoney)}</Text>
+                  <Text style={styles.calcLabel}>Money (Without Product) (×₹{ratePerUnit}):</Text>
+                  <Text style={styles.calcValue}>₹{formatIndianNumber(yearlyMoneyWithoutProduct)}</Text>
                 </View>
                 <View style={styles.calcRow}>
-                  <Text style={styles.calcLabel}>Live Yearly Money:</Text>
-                  <Text style={styles.calcValue}>₹{formatIndianNumber(yearlyMoney)}</Text>
+                  <Text style={styles.calcLabel}>Yearly Units (With Product):</Text>
+                  <Text style={styles.calcValue}>{formatIndianNumber(yearlyUnitsWithProduct)} Units</Text>
+                </View>
+                <View style={styles.calcRow}>
+                  <Text style={styles.calcLabel}>Money (With Product) (×₹{ratePerUnit}):</Text>
+                  <Text style={styles.calcValue}>₹{formatIndianNumber(yearlyMoneyWithProduct)}</Text>
                 </View>
                 <View style={[styles.calcRow, styles.calcResultRow]}>
-                  <Text style={styles.calcResultLabel}>Product Profit:</Text>
+                  <Text style={styles.calcResultLabel}>Product Profit (Savings):</Text>
                   <Text style={styles.calcResultValue}>₹{formatIndianNumber(Math.max(0, productProfit))}</Text>
                 </View>
               </View>
@@ -842,6 +841,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#1e293b',
     marginLeft: 8,
+  },
+  userInputDescription: {
+    fontSize: 13,
+    color: '#64748b',
+    marginBottom: 12,
+    fontWeight: '400',
   },
   userInputRow: {
     flexDirection: 'row',
