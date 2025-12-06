@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import WebSocketService from '../services/WebSocketService';
 import NotificationService from '../services/NotificationService';
+import BackgroundTaskService from '../services/BackgroundTaskService';
 
 const LiveScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
@@ -57,6 +58,9 @@ const LiveScreen = () => {
         const meterData = message.data;
         const meterId = message.meterId;
         const meterName = `Meter ${meterId}`;
+
+        // Update background task service with latest data
+        BackgroundTaskService.updateMeterData(meterId, meterData);
 
         if (meterData.voltage === 0) {
           NotificationService.showVoltageAlert(meterId, meterName);

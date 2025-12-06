@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,15 +7,194 @@ import {
   TouchableOpacity,
   Dimensions,
   Platform,
+  TextInput,
+  Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import WebSocketService from '../services/WebSocketService';
 
 const { width } = Dimensions.get('window');
+
+// Storage helper for cross-platform compatibility
+const Storage = {
+  getItem: async (key) => {
+    if (Platform.OS === 'web') {
+      return localStorage.getItem(key);
+    } else {
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      return await AsyncStorage.getItem(key);
+    }
+  },
+  setItem: async (key, value) => {
+    if (Platform.OS === 'web') {
+      localStorage.setItem(key, value);
+    } else {
+      const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+      await AsyncStorage.setItem(key, value);
+    }
+  }
+};
 
 const HomeScreen = () => {
   const isSmallScreen = width < 400;
   const isTablet = width > 768;
+  
+  // State for meter data from WebSocket (Live Meter Page)
+  const [meterData, setMeterData] = useState({
+    1: { energy: 50, power: 1200 },
+    2: { energy: 45, power: 1080 },
+    3: { energy: 62, power: 1435 },
+    4: { energy: 55, power: 1254 },
+  });
+  const [connectionStatus, setConnectionStatus] = useState('Disconnected');
+  
+  // State for energy tracking (in Units - 1 kWh = 1 Unit)
+  const [dailyUnits, setDailyUnits] = useState(0); // Daily energy in Units
+  const [yearlyUnits, setYearlyUnits] = useState(0); // Yearly energy in Units
+  const [lastUpdateDate, setLastUpdateDate] = useState(null);
+  
+  // State for user input product profit calculation
+  const [userInputUnits, setUserInputUnits] = useState('');
+  const [confirmedUserUnits, setConfirmedUserUnits] = useState(0);
+
+  // Rate per Unit (₹6 per Unit/kWh)
+  const ratePerUnit = 6;
+
+  // Connect to WebSocket to get live meter data
+  useEffect(() => {
+    WebSocketService.connect();
+    setConnectionStatus('Connecting...');
+
+    const handleWebSocketMessage = (message) => {
+      if (message.data && message.meterId) {
+        const meterDataReceived = message.data;
+        const meterId = message.meterId;
+
+        setMeterData(prevData => ({
+          ...prevData,
+          [meterId]: {
+            ...prevData[meterId],
+            ...meterDataReceived
+          }
+        }));
+      }
+    };
+
+    const handleConnectionStatus = (status) => {
+      setConnectionStatus(status);
+    };
+
+    WebSocketService.addMessageListener(handleWebSocketMessage);
+    WebSocketService.addConnectionStatusListener(handleConnectionStatus);
+
+    return () => {
+      WebSocketService.removeMessageListener(handleWebSocketMessage);
+      WebSocketService.removeConnectionStatusListener(handleConnectionStatus);
+    };
+  }, []);
+
+  // Calculate total energy (Units) from all meters
+  const calculateTotalMeterUnits = () => {
+    let totalUnits = 0;
+    Object.values(meterData).forEach(meter => {
+      if (meter && meter.energy !== undefined) {
+        totalUnits += meter.energy; // 1 kWh = 1 Unit
+      }
+    });
+    return totalUnits;
+  };
+
+  // Load saved energy data on mount
+  useEffect(() => {
+    const loadEnergyData = async () => {
+      try {
+        const savedData = await Storage.getItem('@home_energy_data_v3');
+        if (savedData) {
+          const data = JSON.parse(savedData);
+          const today = new Date().toDateString();
+          
+          if (data.lastUpdateDate !== today) {
+            // New day - use meter data
+            const meterUnits = calculateTotalMeterUnits();
+            setDailyUnits(meterUnits);
+            setLastUpdateDate(today);
+          } else {
+            setDailyUnits(data.dailyUnits || calculateTotalMeterUnits());
+            setLastUpdateDate(data.lastUpdateDate);
+          }
+          setYearlyUnits(data.yearlyUnits || 0);
+          setConfirmedUserUnits(data.confirmedUserUnits || 0);
+        } else {
+          setLastUpdateDate(new Date().toDateString());
+          const meterUnits = calculateTotalMeterUnits();
+          setDailyUnits(meterUnits);
+          setYearlyUnits(meterUnits * 365);
+        }
+      } catch (error) {
+        console.log('Error loading energy data:', error);
+        // Set default values on error
+        const meterUnits = calculateTotalMeterUnits();
+        setDailyUnits(meterUnits);
+        setYearlyUnits(meterUnits * 365);
+        setLastUpdateDate(new Date().toDateString());
+      }
+    };
+    loadEnergyData();
+  }, []);
+
+  // Update daily and yearly units from meter data
+  useEffect(() => {
+    const meterUnits = calculateTotalMeterUnits();
+    if (meterUnits > 0) {
+      setDailyUnits(meterUnits);
+      setYearlyUnits(meterUnits * 365); // Estimated yearly based on daily
+    }
+  }, [meterData]);
+
+  // Save energy data whenever it changes
+  useEffect(() => {
+    const saveEnergyData = async () => {
+      try {
+        const data = {
+          dailyUnits,
+          yearlyUnits,
+          lastUpdateDate: lastUpdateDate || new Date().toDateString(),
+          confirmedUserUnits,
+        };
+        await Storage.setItem('@home_energy_data_v3', JSON.stringify(data));
+      } catch (error) {
+        console.log('Error saving energy data:', error);
+      }
+    };
+    if (lastUpdateDate) {
+      saveEnergyData();
+    }
+  }, [dailyUnits, yearlyUnits, lastUpdateDate, confirmedUserUnits]);
+
+  // Calculate money (₹6 per Unit)
+  const dailyMoney = dailyUnits * ratePerUnit; // Daily Units × ₹6
+  const yearlyMoney = yearlyUnits * ratePerUnit; // Yearly Units × ₹6
+  
+  // Product profit calculation
+  const userInputMoney = confirmedUserUnits * ratePerUnit; // User input units × ₹6
+  const productProfit = yearlyMoney - userInputMoney; // Live Yearly Money - User Input Money
+
+  // Handle user input - auto calculate on input change
+  const handleUserInputChange = (value) => {
+    setUserInputUnits(value);
+    const unitsValue = parseFloat(value);
+    if (!isNaN(unitsValue) && unitsValue >= 0) {
+      setConfirmedUserUnits(unitsValue);
+    } else {
+      setConfirmedUserUnits(0);
+    }
+  };
+
+  // Format number with commas for Indian number system
+  const formatIndianNumber = (num) => {
+    return num.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+  };
   
   const getCardWidth = () => {
     if (isSmallScreen) return '100%';
@@ -23,11 +202,27 @@ const HomeScreen = () => {
     return '47%';
   };
 
+  // Get current power from meters
+  const getTotalPower = () => {
+    let totalPower = 0;
+    Object.values(meterData).forEach(meter => {
+      if (meter && meter.power !== undefined) {
+        totalPower += meter.power;
+      }
+    });
+    return totalPower;
+  };
+
+  // Count online meters
+  const getOnlineMeters = () => {
+    return Object.values(meterData).filter(meter => meter !== null).length;
+  };
+
   const quickStats = [
-    { title: 'Total Energy', value: '2,450', unit: 'kWh', icon: 'flash', gradient: ['#6366f1', '#8b5cf6'], bgColor: '#eef2ff' },
-    { title: 'Active Meters', value: '4', unit: 'Online', icon: 'speedometer', gradient: ['#10b981', '#34d399'], bgColor: '#ecfdf5' },
-    { title: 'Solar Output', value: '850', unit: 'W', icon: 'sunny', gradient: ['#f59e0b', '#fbbf24'], bgColor: '#fffbeb' },
-    { title: 'Wind Output', value: '320', unit: 'W', icon: 'leaf', gradient: ['#06b6d4', '#22d3ee'], bgColor: '#ecfeff' },
+    { title: 'Total Units', value: formatIndianNumber(dailyUnits), unit: 'Units', icon: 'flash', gradient: ['#6366f1', '#8b5cf6'], bgColor: '#eef2ff' },
+    { title: 'Active Meters', value: getOnlineMeters().toString(), unit: 'Online', icon: 'speedometer', gradient: ['#10b981', '#34d399'], bgColor: '#ecfdf5' },
+    { title: 'Total Power', value: formatIndianNumber(getTotalPower()), unit: 'W', icon: 'sunny', gradient: ['#f59e0b', '#fbbf24'], bgColor: '#fffbeb' },
+    { title: 'Connection', value: connectionStatus === 'Connected' ? 'Live' : 'Offline', unit: '', icon: 'wifi', gradient: ['#06b6d4', '#22d3ee'], bgColor: '#ecfeff' },
   ];
 
   const systemStatus = [
@@ -71,18 +266,13 @@ const HomeScreen = () => {
         <View style={styles.summaryCard}>
           <View style={styles.summaryRow}>
             <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Today's Generation</Text>
-              <Text style={styles.summaryValue}>1,170 W</Text>
+              <Text style={styles.summaryLabel}>Daily Units</Text>
+              <Text style={styles.summaryValue}>{formatIndianNumber(dailyUnits)} Units</Text>
             </View>
             <View style={styles.summaryDivider} />
             <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Efficiency</Text>
-              <Text style={styles.summaryValue}>94.5%</Text>
-            </View>
-            <View style={styles.summaryDivider} />
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>CO₂ Saved</Text>
-              <Text style={styles.summaryValue}>12.4 kg</Text>
+              <Text style={styles.summaryLabel}>Money Per Day</Text>
+              <Text style={styles.summaryValue}>₹{formatIndianNumber(dailyMoney)}</Text>
             </View>
           </View>
         </View>
@@ -93,6 +283,92 @@ const HomeScreen = () => {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContentContainer}
       >
+        {/* Profit Cards Section */}
+        <View style={styles.profitSection}>
+          <Text style={styles.sectionTitle}>Profit Overview</Text>
+          
+          {/* Profit Per Year Card */}
+          <View style={styles.profitCard}>
+            <LinearGradient
+              colors={['#10b981', '#059669']}
+              style={styles.profitCardGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <View style={styles.profitCardIcon}>
+                <Ionicons name="calendar" size={24} color="#ffffff" />
+              </View>
+              <View style={styles.profitCardContent}>
+                <Text style={styles.profitCardLabel}>Money Earned Per Year</Text>
+                <Text style={styles.profitCardValue}>₹{formatIndianNumber(yearlyMoney)}</Text>
+                <Text style={styles.profitCardSubtext}>Based on {formatIndianNumber(yearlyUnits)} Units yearly</Text>
+              </View>
+            </LinearGradient>
+          </View>
+
+          {/* Profit by Product Card */}
+          <View style={styles.profitCard}>
+            <LinearGradient
+              colors={['#6366f1', '#8b5cf6']}
+              style={styles.profitCardGradient}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <View style={styles.profitCardIcon}>
+                <Ionicons name="cube" size={24} color="#ffffff" />
+              </View>
+              <View style={styles.profitCardContent}>
+                <Text style={styles.profitCardLabel}>Profit Earned by Product</Text>
+                <Text style={styles.profitCardValue}>₹{formatIndianNumber(Math.max(0, productProfit))}</Text>
+                <Text style={styles.profitCardSubtext}>Yearly Money - Your Input Money</Text>
+              </View>
+            </LinearGradient>
+          </View>
+
+          {/* User Input Section for Product Profit */}
+          <View style={styles.userInputCard}>
+            <View style={styles.userInputHeader}>
+              <Ionicons name="calculator" size={20} color="#6366f1" />
+              <Text style={styles.userInputTitle}>Calculate Product Profit</Text>
+            </View>
+            
+            <View style={styles.userInputRow}>
+              <View style={styles.inputWrapper}>
+                <TextInput
+                  style={styles.energyInput}
+                  placeholder="Enter Units (kWh)"
+                  placeholderTextColor="#94a3b8"
+                  value={userInputUnits}
+                  onChangeText={handleUserInputChange}
+                  keyboardType="decimal-pad"
+                />
+                <Text style={styles.inputUnit}>Units</Text>
+              </View>
+            </View>
+
+            {confirmedUserUnits > 0 && (
+              <View style={styles.calculationDisplay}>
+                <View style={styles.calcRow}>
+                  <Text style={styles.calcLabel}>Your Input:</Text>
+                  <Text style={styles.calcValue}>{formatIndianNumber(confirmedUserUnits)} Units</Text>
+                </View>
+                <View style={styles.calcRow}>
+                  <Text style={styles.calcLabel}>Your Input Money (×₹{ratePerUnit}):</Text>
+                  <Text style={styles.calcValue}>₹{formatIndianNumber(userInputMoney)}</Text>
+                </View>
+                <View style={styles.calcRow}>
+                  <Text style={styles.calcLabel}>Live Yearly Money:</Text>
+                  <Text style={styles.calcValue}>₹{formatIndianNumber(yearlyMoney)}</Text>
+                </View>
+                <View style={[styles.calcRow, styles.calcResultRow]}>
+                  <Text style={styles.calcResultLabel}>Product Profit:</Text>
+                  <Text style={styles.calcResultValue}>₹{formatIndianNumber(Math.max(0, productProfit))}</Text>
+                </View>
+              </View>
+            )}
+          </View>
+        </View>
+
         {/* Quick Stats Cards */}
         <View style={styles.statsContainer}>
           {quickStats.map((stat, index) => (
@@ -490,6 +766,150 @@ const styles = StyleSheet.create({
     color: '#94a3b8',
     fontWeight: '400',
   },
+  
+  // Profit Section Styles
+  profitSection: {
+    marginBottom: 24,
+  },
+  profitCard: {
+    marginBottom: 12,
+    borderRadius: 16,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  profitCardGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+  },
+  profitCardIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 16,
+  },
+  profitCardContent: {
+    flex: 1,
+  },
+  profitCardLabel: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontWeight: '500',
+    marginBottom: 4,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  profitCardValue: {
+    fontSize: 28,
+    color: '#ffffff',
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  profitCardSubtext: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontWeight: '400',
+  },
+  
+  // User Input Card Styles
+  userInputCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  userInputHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  userInputTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1e293b',
+    marginLeft: 8,
+  },
+  userInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  inputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f1f5f9',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+  },
+  energyInput: {
+    flex: 1,
+    height: 48,
+    fontSize: 16,
+    color: '#1e293b',
+  },
+  inputUnit: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  calculationDisplay: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 16,
+  },
+  calcRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  calcLabel: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  calcValue: {
+    fontSize: 14,
+    color: '#1e293b',
+    fontWeight: '600',
+  },
+  calcResultRow: {
+    borderBottomWidth: 0,
+    marginTop: 8,
+    paddingTop: 12,
+    borderTopWidth: 2,
+    borderTopColor: '#6366f1',
+  },
+  calcResultLabel: {
+    fontSize: 16,
+    color: '#6366f1',
+    fontWeight: '600',
+  },
+  calcResultValue: {
+    fontSize: 18,
+    color: '#6366f1',
+    fontWeight: '700',
+  },
+  
   bottomSpacer: {
     height: 20,
   },
