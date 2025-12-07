@@ -1,5 +1,6 @@
 import mqtt from 'mqtt';
 import { WebSocketServer } from 'ws';
+import net from 'net';
 
 // WebSocket Server setup - bind to all interfaces
 const wss = new WebSocketServer({ 
@@ -8,11 +9,55 @@ const wss = new WebSocketServer({
 });
 console.log('WebSocket server started on port 8080 (all interfaces)');
 
+// Primary and fallback IPs
+const PRIMARY_IP = '100.69.116.48';
+const FALLBACK_IP = '192.168.43.147';
+const MQTT_PORT = 1883;
+
 // MQTT setup
-const brokerUrl = 'mqtt://192.168.43.147:1883';
 const topic = 'pzem1/all';
 const additionalTopics = ['pzem2/all', 'pzem3/all'];
-const client = mqtt.connect(brokerUrl);
+let client;
+
+// Function to check if IP is reachable
+function checkIPAvailability(ip, port, timeout = 3000) {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    socket.setTimeout(timeout);
+    
+    socket.on('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    
+    socket.on('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    
+    socket.on('error', () => {
+      resolve(false);
+    });
+    
+    socket.connect(port, ip);
+  });
+}
+
+// Connect to MQTT with fallback
+let brokerUrl = '';
+async function connectMQTT() {
+  const primaryAvailable = await checkIPAvailability(PRIMARY_IP, MQTT_PORT);
+  brokerUrl = primaryAvailable 
+    ? `mqtt://${PRIMARY_IP}:${MQTT_PORT}`
+    : `mqtt://${FALLBACK_IP}:${MQTT_PORT}`;
+  
+  console.log(`Connecting to MQTT broker at ${brokerUrl}`);
+  client = mqtt.connect(brokerUrl);
+  return client;
+}
+
+// Initialize MQTT connection
+await connectMQTT();
 
 // Store connected WebSocket clients
 const clients = new Set();

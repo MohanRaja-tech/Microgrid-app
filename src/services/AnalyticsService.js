@@ -1,9 +1,13 @@
 // Analytics Service - Handles database queries for analytics data
 // This service connects to the PostgreSQL database and fetches meter/solar data
 
+// Primary and fallback IPs
+const PRIMARY_IP = '100.69.116.48';
+const FALLBACK_IP = '192.168.43.147';
+
 // Database configuration (matching database.js)
 const DB_CONFIG = {
-  host: '192.168.43.147',
+  host: PRIMARY_IP,
   port: 5432,
   database: 'microgrid_db',
   tables: {
@@ -32,14 +36,37 @@ const DB_CONFIG = {
   }
 };
 
-// API Base URL - Points to the backend server running on your local machine
-// The backend server (analyticsServer.js) connects to PostgreSQL at 192.168.43.147
-// Updated to current local IPv4 (detected on this machine)
-const API_BASE_URL = 'http://192.168.43.205:3001';
+// API Base URLs - Points to the backend server running on your local machine
+// The backend server (analyticsServer.js) connects to PostgreSQL
+// Primary IP will be tried first, then fallback
+const PRIMARY_API_URL = 'http://100.69.116.48:3001';
+const FALLBACK_API_URL = 'http://192.168.43.205:3001';
+let API_BASE_URL = PRIMARY_API_URL;
 
 class AnalyticsService {
   constructor() {
     this.isConnected = false;
+    this.usingFallback = false;
+  }
+
+  // Try API request with fallback
+  async fetchWithFallback(endpoint, options = {}) {
+    try {
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response;
+    } catch (error) {
+      // If primary fails and we haven't tried fallback yet
+      if (API_BASE_URL === PRIMARY_API_URL && !this.usingFallback) {
+        console.log('Primary API failed, trying fallback...');
+        API_BASE_URL = FALLBACK_API_URL;
+        this.usingFallback = true;
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response;
+      }
+      throw error;
+    }
   }
 
   // Format date for PostgreSQL query
@@ -68,7 +95,7 @@ class AnalyticsService {
         tableName
       });
 
-      const response = await fetch(`${API_BASE_URL}/api/analytics`, {
+      const response = await this.fetchWithFallback('/api/analytics', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

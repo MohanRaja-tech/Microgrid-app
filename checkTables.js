@@ -1,8 +1,12 @@
 import pkg from 'pg';
 const { Client } = pkg;
 
+// Primary and fallback IPs
+const PRIMARY_IP = '100.69.116.48';
+const FALLBACK_IP = '192.168.43.147';
+
 const client = new Client({
-    host: '192.168.43.147',
+    host: PRIMARY_IP,
     port: 5432,
     user: 'postgres',
     password: 'Ghost+10125',

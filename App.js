@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { View, StyleSheet, Platform, LogBox, AppState } from 'react-native';
+import React, { useEffect, useRef, Component } from 'react';
+import { View, Text, StyleSheet, Platform, LogBox, AppState } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,6 +9,36 @@ import * as Notifications from 'expo-notifications';
 
 // Disable all LogBox notifications (yellow boxes and red boxes in development)
 LogBox.ignoreAllLogs(true);
+
+// Error Boundary Component
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('App Error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorTitle}>Something went wrong</Text>
+          <Text style={styles.errorText}>Please restart the app</Text>
+          <Text style={styles.errorDetails}>{this.state.error?.toString()}</Text>
+        </View>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 import HomeScreen from './src/screens/HomeScreen';
 import LiveScreen from './src/screens/LiveScreen';
@@ -51,18 +81,35 @@ const TabIcon = ({ focused, iconName, color, gradientColors }) => {
   return <Ionicons name={iconName + '-outline'} size={24} color={color} />;
 };
 
-export default function App() {
+function MainApp() {
   const appState = useRef(AppState.currentState);
 
   useEffect(() => {
-    // Initialize notification service
-    NotificationService.initialize();
+    // Initialize services with error handling
+    const initializeApp = async () => {
+      try {
+        // Initialize notification service
+        await NotificationService.initialize();
+      } catch (error) {
+        console.error('Failed to initialize notifications:', error);
+      }
 
-    // Register background fetch task
-    BackgroundTaskService.registerBackgroundFetchAsync();
+      try {
+        // Register background fetch task
+        await BackgroundTaskService.registerBackgroundFetchAsync();
+      } catch (error) {
+        console.error('Failed to register background task:', error);
+      }
 
-    // Keep WebSocket connection alive
-    WebSocketService.connect();
+      try {
+        // Keep WebSocket connection alive
+        WebSocketService.connect();
+      } catch (error) {
+        console.error('Failed to connect WebSocket:', error);
+      }
+    };
+
+    initializeApp();
 
     // Listen to app state changes
     const subscription = AppState.addEventListener('change', nextAppState => {
@@ -177,6 +224,15 @@ export default function App() {
   );
 }
 
+// Export wrapped app with error boundary
+export default function App() {
+  return (
+    <ErrorBoundary>
+      <MainApp />
+    </ErrorBoundary>
+  );
+}
+
 const styles = StyleSheet.create({
   activeIconContainer: {
     alignItems: 'center',
@@ -193,5 +249,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    backgroundColor: '#f1f5f9',
+  },
+  errorTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#1e293b',
+    marginBottom: 10,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#64748b',
+    marginBottom: 20,
+  },
+  errorDetails: {
+    fontSize: 12,
+    color: '#94a3b8',
+    textAlign: 'center',
   },
 }); 

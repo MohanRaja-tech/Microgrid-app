@@ -11,8 +11,12 @@ app.use(cors());
 app.use(express.json());
 
 // Database configuration
+// Primary and fallback IPs
+const PRIMARY_IP = "100.69.116.48";
+const FALLBACK_IP = "192.168.43.147";
+
 const dbConfig = {
-    host: "192.168.43.147",
+    host: PRIMARY_IP,
     port: 5432,
     user: "postgres",
     password: "Ghost+10125",
@@ -51,13 +55,25 @@ let client;
 
 async function connectToDatabase() {
     try {
+        // Try primary IP
         client = new Client(dbConfig);
         await client.connect();
-        console.log('✅ Connected to PostgreSQL database');
+        console.log(`✅ Connected to PostgreSQL database at ${PRIMARY_IP}`);
         return true;
     } catch (error) {
-        console.error('❌ Database connection error:', error.message);
-        return false;
+        console.log(`❌ Primary IP ${PRIMARY_IP} failed: ${error.message}`);
+        console.log(`🔄 Trying fallback IP ${FALLBACK_IP}...`);
+        
+        try {
+            // Try fallback IP
+            client = new Client({ ...dbConfig, host: FALLBACK_IP });
+            await client.connect();
+            console.log(`✅ Connected to PostgreSQL database at ${FALLBACK_IP}`);
+            return true;
+        } catch (fallbackError) {
+            console.error(`❌ Fallback IP ${FALLBACK_IP} also failed: ${fallbackError.message}`);
+            return false;
+        }
     }
 }
 

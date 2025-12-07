@@ -6,16 +6,25 @@ class WebSocketService {
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
     this.reconnectInterval = 3000; // 3 seconds
+    // Use local Wi-Fi network IP - both server and phone must be on same Wi-Fi
+    this.PRIMARY_WS_URL = 'ws://10.206.140.68:8080';  // Server's local Wi-Fi IP
+    this.FALLBACK_WS_URL = 'ws://100.125.43.74:8080'; // Tailscale IP
+    this.currentUrl = this.PRIMARY_WS_URL;
   }
 
-  connect(url = 'ws://192.168.43.205:8080') {
+  connect(url) {
+    // Use provided URL or try current URL (primary or fallback)
+    const wsUrl = url || this.currentUrl;
+    
     try {
-      this.ws = new WebSocket(url);
+      console.log(`Attempting WebSocket connection to ${wsUrl}`);
+      this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
-        console.log('WebSocket connected');
+        console.log(`WebSocket connected to ${wsUrl}`);
         this.isConnected = true;
         this.reconnectAttempts = 0;
+        this.currentUrl = wsUrl; // Remember successful URL
         this.notifyConnectionStatus('Connected');
       };
 
@@ -41,9 +50,17 @@ class WebSocketService {
       };
 
       this.ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
+        console.error(`WebSocket error on ${wsUrl}:`, error);
         this.isConnected = false;
-        this.notifyConnectionStatus('Error');
+        
+        // Try fallback if primary failed and not manually provided URL
+        if (wsUrl === this.PRIMARY_WS_URL && !url) {
+          console.log('Primary WebSocket failed, trying fallback...');
+          this.currentUrl = this.FALLBACK_WS_URL;
+          setTimeout(() => this.connect(), 1000);
+        } else {
+          this.notifyConnectionStatus('Error');
+        }
       };
 
     } catch (error) {
