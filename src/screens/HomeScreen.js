@@ -56,7 +56,8 @@ const HomeScreen = () => {
   // State for user input product profit calculation (power WITHOUT product)
   const [userInputKW, setUserInputKW] = useState(''); // User input in kW
   const [confirmedUserKW, setConfirmedUserKW] = useState(0); // User's power in kW without product
-  const [confirmedUserUnits, setConfirmedUserUnits] = useState(0); // Converted to yearly units (kW × 24 × 365)
+  const [confirmedUserUnits, setConfirmedUserUnits] = useState(0); // Converted to 10-year units (kW × 24 × 365 × 10)
+  const [isSubmitted, setIsSubmitted] = useState(false); // Track if user has submitted
 
   // Rate per Unit (₹6 per Unit/kWh)
   const ratePerUnit = 6;
@@ -117,8 +118,8 @@ const HomeScreen = () => {
           const savedKW = data.confirmedUserKW || 0;
           setConfirmedUserKW(savedKW);
           setUserInputKW(savedKW ? savedKW.toString() : '');
-          // Convert kW to yearly units: kW × 24 hours × 365 days
-          setConfirmedUserUnits(savedKW * 24 * 365);
+          // Convert kW to 10-year units: kW × 24 hours × 365 days × 10 years
+          setConfirmedUserUnits(savedKW * 24 * 365 * 10);
         }
       } catch (error) {
         console.log('Error loading user input:', error);
@@ -157,27 +158,31 @@ const HomeScreen = () => {
   // Calculate money (₹6 per Unit)
   const dailyMoney = dailyUnits * ratePerUnit; // Daily Units (from live MQTT) × ₹6
   
-  // Calculate yearly values
-  const yearlyUnitsWithProduct = dailyUnits * 365; // Yearly units WITH product (extrapolated from daily)
-  const yearlyMoneyWithProduct = yearlyUnitsWithProduct * ratePerUnit; // Yearly money WITH product
+  // Calculate Product Profit for 10 years using daily units from live data
+  const tenYearUnits = dailyUnits * 365 * 10; // Daily Units × 365 days × 10 years
+  const productProfit = tenYearUnits * ratePerUnit; // Units × ₹6 (e.g., 2 × 365 × 10 × 6 = 43,800)
   
-  // User input represents yearly units WITHOUT product
-  const yearlyMoneyWithoutProduct = confirmedUserUnits * ratePerUnit; // Money earned per year WITHOUT product (user input × ₹6)
+  // Money Earned in 10 Years: Product Profit minus 4%
+  const moneyEarnedIn10Years = productProfit - (productProfit * 0.04); // Profit - 4%
   
-  // Product profit calculation (savings by using the product)
-  const productProfit = yearlyMoneyWithoutProduct - yearlyMoneyWithProduct; // Savings = (Without product) - (With product)
+  // User input represents 10-year units WITHOUT product (for reference/comparison)
+  const tenYearMoneyWithoutProduct = confirmedUserUnits * ratePerUnit; // Money for 10 years WITHOUT product (user input × ₹6)
 
-  // Handle user input - auto calculate on input change
+  // Handle user input change (just update the text)
   const handleUserInputChange = (value) => {
     setUserInputKW(value);
-    const kwValue = parseFloat(value);
-    if (!isNaN(kwValue) && kwValue >= 0) {
+    setIsSubmitted(false); // Reset submit status when user types
+  };
+
+  // Handle Submit button click
+  const handleSubmit = () => {
+    const kwValue = parseFloat(userInputKW);
+    if (!isNaN(kwValue) && kwValue > 0) {
       setConfirmedUserKW(kwValue);
-      // Convert kW to yearly units: kW × 24 hours/day × 365 days/year = kWh/year
-      setConfirmedUserUnits(kwValue * 24 * 365);
-    } else {
-      setConfirmedUserKW(0);
-      setConfirmedUserUnits(0);
+      // Convert kW to 10-year units: kW × 24 hours/day × 365 days/year × 10 years = kWh for 10 years
+      setConfirmedUserUnits(kwValue * 24 * 365 * 10);
+      setIsSubmitted(true);
+      Keyboard.dismiss();
     }
   };
 
@@ -256,12 +261,12 @@ const HomeScreen = () => {
         <View style={styles.summaryCard}>
           <View style={styles.summaryRow}>
             <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Daily Units</Text>
+              <Text style={styles.summaryLabel}>Total Units Consumed  </Text>
               <Text style={styles.summaryValue}>{formatIndianNumber(dailyUnits)} Units</Text>
             </View>
             <View style={styles.summaryDivider} />
             <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Money Per Day</Text>
+              <Text style={styles.summaryLabel}>Total Amount for Units</Text>
               <Text style={styles.summaryValue}>₹{formatIndianNumber(dailyMoney)}</Text>
             </View>
           </View>
@@ -277,7 +282,7 @@ const HomeScreen = () => {
         <View style={styles.profitSection}>
           <Text style={styles.sectionTitle}>Profit Overview</Text>
           
-          {/* Profit Per Year Card */}
+          {/* Money Earned in 10 Years Card */}
           <View style={styles.profitCard}>
             <LinearGradient
               colors={['#10b981', '#059669']}
@@ -289,14 +294,14 @@ const HomeScreen = () => {
                 <Ionicons name="calendar" size={24} color="#ffffff" />
               </View>
               <View style={styles.profitCardContent}>
-                <Text style={styles.profitCardLabel}>Money Earned Per Year (Without Product)</Text>
-                <Text style={styles.profitCardValue}>₹{formatIndianNumber(yearlyMoneyWithoutProduct)}</Text>
-                <Text style={styles.profitCardSubtext}>Based on {formatIndianNumber(confirmedUserUnits)} Units yearly</Text>
+                <Text style={styles.profitCardLabel}>Money Earned in 10 Years</Text>
+                <Text style={styles.profitCardValue}>₹{formatIndianNumber(Math.max(0, moneyEarnedIn10Years))}</Text>
+                <Text style={styles.profitCardSubtext}>Product Profit for 10 Years - 4%</Text>
               </View>
             </LinearGradient>
           </View>
 
-          {/* Profit by Product Card */}
+          {/* Profit Gained by Product Card */}
           <View style={styles.profitCard}>
             <LinearGradient
               colors={['#6366f1', '#8b5cf6']}
@@ -308,9 +313,9 @@ const HomeScreen = () => {
                 <Ionicons name="cube" size={24} color="#ffffff" />
               </View>
               <View style={styles.profitCardContent}>
-                <Text style={styles.profitCardLabel}>Profit Earned by Product</Text>
+                <Text style={styles.profitCardLabel}>Profit Gained by the Product</Text>
                 <Text style={styles.profitCardValue}>₹{formatIndianNumber(Math.max(0, productProfit))}</Text>
-                <Text style={styles.profitCardSubtext}>Yearly Money - Your Input Money</Text>
+                <Text style={styles.profitCardSubtext}>10-Year Savings by Using Product</Text>
               </View>
             </LinearGradient>
           </View>
@@ -335,6 +340,13 @@ const HomeScreen = () => {
                 />
                 <Text style={styles.inputUnit}>kW</Text>
               </View>
+              <TouchableOpacity 
+                style={styles.submitButton}
+                onPress={handleSubmit}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.submitButtonText}>Submit</Text>
+              </TouchableOpacity>
             </View>
 
             {confirmedUserUnits > 0 && (
@@ -344,25 +356,31 @@ const HomeScreen = () => {
                   <Text style={styles.calcValue}>{formatIndianNumber(confirmedUserKW)} kW</Text>
                 </View>
                 <View style={styles.calcRow}>
-                  <Text style={styles.calcLabel}>Yearly Units (Without Product):</Text>
-                  <Text style={styles.calcValue}>{formatIndianNumber(confirmedUserUnits)} Units</Text>
+                  <Text style={styles.calcLabel}>Daily Units (From Live Data):</Text>
+                  <Text style={styles.calcValue}>{formatIndianNumber(dailyUnits)} Units</Text>
                 </View>
                 <View style={styles.calcRow}>
-                  <Text style={styles.calcLabel}>Money (Without Product) (×₹{ratePerUnit}):</Text>
-                  <Text style={styles.calcValue}>₹{formatIndianNumber(yearlyMoneyWithoutProduct)}</Text>
+                  <Text style={styles.calcLabel}>10-Year Units Calculation:</Text>
+                  <Text style={styles.calcValue}>{formatIndianNumber(dailyUnits)} × 365 × 10 = {formatIndianNumber(tenYearUnits)} Units</Text>
                 </View>
                 <View style={styles.calcRow}>
-                  <Text style={styles.calcLabel}>Yearly Units (With Product):</Text>
-                  <Text style={styles.calcValue}>{formatIndianNumber(yearlyUnitsWithProduct)} Units</Text>
-                </View>
-                <View style={styles.calcRow}>
-                  <Text style={styles.calcLabel}>Money (With Product) (×₹{ratePerUnit}):</Text>
-                  <Text style={styles.calcValue}>₹{formatIndianNumber(yearlyMoneyWithProduct)}</Text>
+                  <Text style={styles.calcLabel}>Amount Calculation (×₹{ratePerUnit}):</Text>
+                  <Text style={styles.calcValue}>{formatIndianNumber(tenYearUnits)} × ₹{ratePerUnit} = ₹{formatIndianNumber(productProfit)}</Text>
                 </View>
                 <View style={[styles.calcRow, styles.calcResultRow]}>
-                  <Text style={styles.calcResultLabel}>Product Profit (Savings):</Text>
+                  <Text style={styles.calcResultLabel}>Profit Gained by Product (10 Years):</Text>
                   <Text style={styles.calcResultValue}>₹{formatIndianNumber(Math.max(0, productProfit))}</Text>
                 </View>
+                <View style={[styles.calcRow, styles.calcResultRow]}>
+                  <Text style={styles.calcResultLabel}>Money Earned in 10 Years (- 4%):</Text>
+                  <Text style={styles.calcResultValue}>₹{formatIndianNumber(Math.max(0, moneyEarnedIn10Years))}</Text>
+                </View>
+                {confirmedUserUnits > 0 && (
+                  <View style={styles.calcRow}>
+                    <Text style={styles.calcLabel}>Your Input (Without Product):</Text>
+                    <Text style={styles.calcValue}>₹{formatIndianNumber(tenYearMoneyWithoutProduct)}</Text>
+                  </View>
+                )}
               </View>
             )}
           </View>
@@ -851,6 +869,7 @@ const styles = StyleSheet.create({
   userInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
   },
   inputWrapper: {
     flex: 1,
@@ -872,6 +891,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748b',
     fontWeight: '500',
+  },
+  submitButton: {
+    backgroundColor: '#6366f1',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    height: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#6366f1',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  submitButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   calculationDisplay: {
     backgroundColor: '#f8fafc',
