@@ -8,10 +8,13 @@ import {
   RefreshControl,
   TouchableOpacity,
   Platform,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Location from 'expo-location';
 import WebSocketService from '../services/WebSocketService';
+import DustDetectionService from '../services/DustDetectionService';
 
 const SOLAR_STORAGE_KEY = '@solar_panel_data';
 
@@ -51,6 +54,10 @@ const SolarScreen = () => {
     1: null,
     2: null,
   });
+  const [dustAnalysis, setDustAnalysis] = useState({});
+  const [weatherData, setWeatherData] = useState(null);
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [locationPermission, setLocationPermission] = useState(null);
   const shouldSaveToStorage = React.useRef(true);
 
   // initialize panel list with per-panel date fields
@@ -59,9 +66,48 @@ const SolarScreen = () => {
     return [
       { id: 1, name: 'Solar Array 1', voltage: '-', current: '-', power: '-', temperature: '-', efficiency: '-', irradiance: '-', status: 'Connecting', date: today, inputDate: today, startDate: today, confirmed: false },
       { id: 2, name: 'Solar Array 2', voltage: '-', current: '-', power: '-', temperature: '-', efficiency: '-', irradiance: '-', status: 'Connecting', date: today, inputDate: today, startDate: today, confirmed: false },
-      { id: 3, name: 'Solar Array 3', voltage: '-', current: '-', power: '-', temperature: '-', efficiency: '-', irradiance: '-', status: 'Offline', date: today, inputDate: today, startDate: today, confirmed: false },
     ];
   });
+
+  // Request location permission and get current location
+  useEffect(() => {
+    const requestLocationPermission = async () => {
+      try {
+        console.log('📍 Requesting location permission...');
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        setLocationPermission(status);
+        
+        if (status === 'granted') {
+          console.log('✅ Location permission granted');
+          const location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          
+          const locationData = {
+            latitude: location.coords.latitude,
+            longitude: location.coords.longitude,
+            altitude: location.coords.altitude,
+            accuracy: location.coords.accuracy,
+          };
+          
+          setCurrentLocation(locationData);
+          console.log('📍 Current Location:', locationData);
+          console.log(`📍 Lat: ${locationData.latitude}, Lon: ${locationData.longitude}`);
+        } else {
+          console.log('❌ Location permission denied');
+          Alert.alert(
+            'Location Permission',
+            'Location permission is required to get accurate weather data for dust detection.',
+            [{ text: 'OK' }]
+          );
+        }
+      } catch (error) {
+        console.error('❌ Error getting location:', error);
+      }
+    };
+
+    requestLocationPermission();
+  }, []);
 
   // Load data from AsyncStorage on mount
   useEffect(() => {
@@ -158,6 +204,72 @@ const SolarScreen = () => {
     };
     saveData();
   }, [solarData, isLoaded]);
+
+  // Check dust when real-time data updates (using live location if available)
+  useEffect(() => {
+    const checkDust = async () => {
+      const panelsWithData = Object.keys(solarRealTimeData).filter(id => solarRealTimeData[id] !== null);
+      
+      if (panelsWithData.length === 0) return;
+
+      // Use live location if available, otherwise use default
+      let latitude, longitude;
+      if (currentLocation) {
+        latitude = currentLocation.latitude;
+        longitude = currentLocation.longitude;
+        console.log('📍 Using live location for weather data');
+      }
+
+      for (const panelId of panelsWithData) {
+        const realTimeData = solarRealTimeData[panelId];
+        const panel = solarData.find(p => p.id === parseInt(panelId));
+        
+        if (realTimeData && panel && realTimeData.voltage !== undefined && realTimeData.current !== undefined && realTimeData.power !== undefined) {
+          const voltage = parseFloat(realTimeData.voltage);
+          const current = parseFloat(realTimeData.current);
+          const power = parseFloat(realTimeData.power);
+          
+          // Assume rated power of 1000W for each panel (can be configured)
+          const ratedPower = 1000;
+          
+          // Fetch weather with live location first
+          let weather = null;
+          if (latitude && longitude) {
+            weather = await DustDetectionService.fetchWeatherData(latitude, longitude);
+          } else {
+            weather = await DustDetectionService.fetchWeatherData();
+          }
+
+          if (weather) {
+            setWeatherData(weather);
+            console.log(`🌡️ Temperature at location: ${weather.temperature}°C`);
+            console.log(`📍 Weather location: ${weather.location || 'Unknown'}`);
+          }
+          
+          const result = await DustDetectionService.checkPanelDust(
+            parseInt(panelId),
+            voltage,
+            current,
+            power,
+            ratedPower
+          );
+
+          if (result.success) {
+            setDustAnalysis(prev => ({
+              ...prev,
+              [panelId]: result.dustAnalysis
+            }));
+          }
+        }
+      }
+    };
+
+    // Check dust every 5 minutes
+    checkDust();
+    const interval = setInterval(checkDust, 5 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [solarRealTimeData, currentLocation]);
 
   // Get current solar data with real-time updates (similar to LiveScreen's getCurrentMeterData)
   const getCurrentSolarData = () => {
@@ -303,6 +415,63 @@ const SolarScreen = () => {
             </View>
           </View>
 
+          {/* Dust Detection Section */}
+          {dustAnalysis[panel.id] && (
+            <View style={[
+              styles.dustSection,
+              { backgroundColor: dustAnalysis[panel.id].hasDust ? '#fef2f2' : '#ecfdf5' }
+            ]}>
+              <View style={styles.dustHeader}>
+                <Ionicons 
+                  name={dustAnalysis[panel.id].hasDust ? "warning" : "checkmark-circle"} 
+                  size={20} 
+                  color={dustAnalysis[panel.id].hasDust ? "#ef4444" : "#10b981"} 
+                />
+                <Text style={[
+                  styles.dustTitle,
+                  { color: dustAnalysis[panel.id].hasDust ? "#ef4444" : "#10b981" }
+                ]}>
+                  {dustAnalysis[panel.id].hasDust ? 'Dust Detected' : 'Panel Clean'}
+                </Text>
+              </View>
+              
+              <View style={styles.dustDetails}>
+                <View style={styles.dustRow}>
+                  <Text style={styles.dustLabel}>Efficiency:</Text>
+                  <Text style={[
+                    styles.dustValue,
+                    { color: dustAnalysis[panel.id].hasDust ? "#ef4444" : "#10b981" }
+                  ]}>
+                    {dustAnalysis[panel.id].efficiency}%
+                  </Text>
+                </View>
+                <View style={styles.dustRow}>
+                  <Text style={styles.dustLabel}>Power Loss:</Text>
+                  <Text style={[
+                    styles.dustValue,
+                    { color: dustAnalysis[panel.id].hasDust ? "#ef4444" : "#64748b" }
+                  ]}>
+                    {dustAnalysis[panel.id].powerLoss}%
+                  </Text>
+                </View>
+                {weatherData && (
+                  <View style={styles.dustRow}>
+                    <Text style={styles.dustLabel}>Temperature:</Text>
+                    <Text style={styles.dustValue}>{weatherData.temperature}°C</Text>
+                  </View>
+                )}
+              </View>
+
+              {dustAnalysis[panel.id].hasDust && (
+                <View style={styles.dustAlert}>
+                  <Text style={styles.dustAlertText}>
+                    {dustAnalysis[panel.id].recommendation}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
           {/* Date input + controls per panel */}
           <View style={styles.dateSection}>
             <Text style={styles.dateLabel}>Selected Date</Text>
@@ -363,9 +532,22 @@ const SolarScreen = () => {
         end={{ x: 1, y: 1 }}
       >
         <View style={styles.headerTop}>
-          <View>
+          <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>Solar Energy ☀️</Text>
             <Text style={styles.headerSubtitle}>Photovoltaic monitoring</Text>
+            {weatherData && (
+              <View style={styles.weatherInfo}>
+                <Ionicons name="location" size={12} color="#ffffff" />
+                <Text style={styles.weatherText}>
+                  {weatherData.location || 'Unknown'} • {weatherData.temperature}°C • {weatherData.description}
+                </Text>
+              </View>
+            )}
+            {currentLocation && (
+              <Text style={styles.locationText}>
+                📍 {currentLocation.latitude.toFixed(4)}, {currentLocation.longitude.toFixed(4)}
+              </Text>
+            )}
           </View>
           <TouchableOpacity style={styles.refreshBtn} onPress={onRefresh}>
             <Ionicons name="refresh" size={18} color="#f59e0b" />
@@ -433,6 +615,28 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     fontSize: 14,
     color: 'rgba(255, 255, 255, 0.7)',
+    marginTop: 4,
+  },
+  weatherInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  weatherText: {
+    fontSize: 11,
+    color: '#ffffff',
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  locationText: {
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.85)',
+    fontWeight: '500',
     marginTop: 4,
   },
   refreshBtn: {
@@ -640,6 +844,56 @@ const styles = StyleSheet.create({
     color: '#10b981',
     minWidth: 40,
     textAlign: 'right',
+  },
+  // Dust Detection Styles
+  dustSection: {
+    marginTop: 12,
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  dustHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  dustTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginLeft: 8,
+  },
+  dustDetails: {
+    marginBottom: 8,
+  },
+  dustRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  dustLabel: {
+    fontSize: 12,
+    color: '#64748b',
+    fontWeight: '500',
+  },
+  dustValue: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  dustAlert: {
+    backgroundColor: '#fee2e2',
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 8,
+    borderLeftWidth: 3,
+    borderLeftColor: '#ef4444',
+  },
+  dustAlertText: {
+    fontSize: 11,
+    color: '#991b1b',
+    fontWeight: '500',
+    lineHeight: 16,
   },
   // Date controls
   dateSection: {
