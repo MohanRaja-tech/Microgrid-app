@@ -8,7 +8,8 @@ class WebSocketService {
     this.reconnectInterval = 3000; // 3 seconds
     // WebSocket bridge runs on this PC (100.125.43.74), not on database server
     this.PRIMARY_WS_URL = 'ws://100.125.43.74:8080';  // This PC Tailscale IP
-    this.FALLBACK_WS_URL = 'ws://192.168.43.205:8080'; // Local Wi-Fi fallback
+    //this.FALLBACK_WS_URL = 'ws://192.168.43.205:8080'; // Local Wi-Fi fallback
+    this.FALLBACK_WS_URL = 'ws://10.206.140.68:8080'; // Local Wi-Fi fallback
     this.currentUrl = this.PRIMARY_WS_URL;
   }
 
@@ -31,7 +32,6 @@ class WebSocketService {
       this.ws.onmessage = (event) => {
         try {
           const message = JSON.parse(event.data);
-          console.log('Received WebSocket message:', message);
           
           // Notify all listeners
           this.messageListeners.forEach(callback => {

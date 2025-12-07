@@ -52,8 +52,6 @@ const LiveScreen = () => {
     setConnectionStatus('Connecting...');
 
     const handleWebSocketMessage = (message) => {
-      console.log('Received WebSocket message:', message);
-      
       if (message.data && message.meterId) {
         const meterData = message.data;
         const meterId = message.meterId;

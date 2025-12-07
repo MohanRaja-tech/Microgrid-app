@@ -15,9 +15,18 @@ class DustDetectionService {
     this.CACHE_DURATION = 10 * 60 * 1000; // 10 minutes
     
     // Temperature-to-Power reference table (based on real-world data)
+    // For temperature range 10-29°C, expected power is 2.5-5W
     this.TEMP_POWER_TABLE = {
-      24.09: { min: 3, max: 5 }, // At 24.09°C, expected power is 3-5W
+      10: { min: 2.5, max: 5 },
+      15: { min: 2.5, max: 5 },
+      20: { min: 2.5, max: 5 },
+      25: { min: 2.5, max: 5 },
+      29: { min: 2.5, max: 5 },
     };
+    
+    // Temperature range for dust detection
+    this.TEMP_RANGE = { min: 10, max: 29 };
+    this.POWER_RANGE = { min: 2.5, max: 5 };
     
     // Standard Test Conditions (STC) reference values
     this.STC_TEMPERATURE = 25; // 25°C standard temperature
@@ -35,14 +44,11 @@ class DustDetectionService {
       if (this.weatherCache && this.lastWeatherUpdate) {
         const timeSinceUpdate = Date.now() - this.lastWeatherUpdate;
         if (timeSinceUpdate < this.CACHE_DURATION) {
-          console.log('📦 Using cached weather data');
           return this.weatherCache;
         }
       }
 
       const url = `${WEATHER_API_URL}?lat=${lat}&lon=${lon}&appid=${WEATHER_API_KEY}&units=metric`;
-      console.log('🌤️ Fetching weather data...');
-      console.log(`📍 Location: Lat ${lat}, Lon ${lon}`);
       
       const response = await fetch(url);
       if (!response.ok) {
@@ -65,9 +71,6 @@ class DustDetectionService {
       
       this.lastWeatherUpdate = Date.now();
       
-      console.log('✅ Weather data fetched:', this.weatherCache);
-      console.log(`🌡️ Temperature: ${this.weatherCache.temperature}°C`);
-      console.log(`📍 Location: ${this.weatherCache.location}`);
       return this.weatherCache;
       
     } catch (error) {
@@ -79,17 +82,10 @@ class DustDetectionService {
   // Calculate expected power output based on temperature
   // Uses lookup table for specific temperatures, otherwise uses formula
   calculateExpectedPower(ratedPower, currentTemperature) {
-    // Check if we have a specific temperature reference
-    const tempKey = Object.keys(this.TEMP_POWER_TABLE).find(temp => 
-      Math.abs(parseFloat(temp) - currentTemperature) < 0.5 // Within 0.5°C tolerance
-    );
-
-    if (tempKey) {
-      // Use the reference table (return average of min and max)
-      const { min, max } = this.TEMP_POWER_TABLE[tempKey];
-      const expectedPower = (min + max) / 2;
-      console.log(`   📋 Using reference table for ${tempKey}°C: ${min}-${max}W (avg: ${expectedPower}W)`);
-      return expectedPower;
+    // Check if temperature is within the defined range (10-25°C)
+    if (currentTemperature >= this.TEMP_RANGE.min && currentTemperature <= this.TEMP_RANGE.max) {
+      // Within the range, return the power range
+      return (this.POWER_RANGE.min + this.POWER_RANGE.max) / 2; // Return average for calculation
     }
 
     // Otherwise use formula: P_expected = P_rated * (1 + coefficient * (T_actual - T_stc))
@@ -101,103 +97,72 @@ class DustDetectionService {
   }
 
   // Analyze if dust is present on the panel
+  // Hardcoded logic: Temp 10-30°C AND Power 2.5-5W = Clean, Temp 10-30°C AND Power < 2.5W = Not Clean
   analyzeDustPresence(actualPower, expectedPower, ratedPower, currentTemp = null) {
-    if (actualPower <= 0 || expectedPower <= 0) {
+    // Hardcoded thresholds
+    const TEMP_MIN = 10;
+    const TEMP_MAX = 30;
+    const POWER_MIN = 2.5;
+    const POWER_MAX = 5;
+    
+    // Check if temperature is between 10-30°C
+    const isTempInRange = currentTemp !== null && currentTemp >= TEMP_MIN && currentTemp <= TEMP_MAX;
+    console.log("Temp:"+isTempInRange+" "+actualPower);
+    // If temp is between 10-30°C
+    if (isTempInRange) {
+      // Check if power is between 2.5-5W
+      if (actualPower >= POWER_MIN) {
+        // Panel is CLEAN
+        return {
+          hasDust: false,
+          dustLevel: 'clean',
+          efficiency: '100.00',
+          powerLoss: '0.00',
+          actualPower: actualPower.toFixed(2),
+          expectedPower: `${POWER_MIN}-${POWER_MAX}`,
+          recommendation: `✅ Panel is clean. Power ${actualPower.toFixed(2)}W is within expected range ${POWER_MIN}-${POWER_MAX}W at ${currentTemp.toFixed(1)}°C`
+        };
+      } else if (actualPower < POWER_MIN) {
+        // Panel is NOT CLEAN - power below 2.5W
+        const deficit = ((POWER_MIN - actualPower) / POWER_MIN) * 100;
+        return {
+          hasDust: true,
+          dustLevel: deficit >= 50 ? 'heavy' : 'light',
+          efficiency: ((actualPower / POWER_MIN) * 100).toFixed(2),
+          powerLoss: deficit.toFixed(2),
+          actualPower: actualPower.toFixed(2),
+          expectedPower: `${POWER_MIN}-${POWER_MAX}`,
+          recommendation: `⚠️ Dust detected! Power ${actualPower.toFixed(2)}W is below expected minimum ${POWER_MIN}W. Cleaning needed.`
+        };
+      } else {
+        // Power above 5W - not specified but treating as clean
+        return {
+          hasDust: false,
+          dustLevel: 'clean',
+          efficiency: '100.00',
+          powerLoss: '0.00',
+          actualPower: actualPower.toFixed(2),
+          expectedPower: `${POWER_MIN}-${POWER_MAX}`,
+          recommendation: `✅ Power ${actualPower.toFixed(2)}W exceeds expected maximum ${POWER_MAX}W but panel is performing well.`
+        };
+      }
+    } else {
+      // Temperature is outside 10-30°C range - don't check
       return {
         hasDust: false,
         dustLevel: 'unknown',
-        efficiency: 0,
-        powerLoss: 0,
-        recommendation: 'Panel not generating power'
+        efficiency: '0.00',
+        powerLoss: '0.00',
+        actualPower: actualPower.toFixed(2),
+        expectedPower: `${POWER_MIN}-${POWER_MAX}`,
+        recommendation: `Temperature ${currentTemp ? currentTemp.toFixed(1) : 'N/A'}°C is outside monitoring range ${TEMP_MIN}-${TEMP_MAX}°C`
       };
     }
-
-    let hasDust = false;
-    let dustLevel = 'clean';
-    let recommendation = 'Panel is operating normally';
-    let efficiency = (actualPower / expectedPower) * 100;
-    let powerLossPercent = ((expectedPower - actualPower) / expectedPower) * 100;
-
-    // Check if we're using a reference temperature with min-max range
-    if (currentTemp !== null) {
-      const tempKey = Object.keys(this.TEMP_POWER_TABLE).find(temp => 
-        Math.abs(parseFloat(temp) - currentTemp) < 0.5
-      );
-
-      if (tempKey) {
-        const { min, max } = this.TEMP_POWER_TABLE[tempKey];
-        
-        // If actual power is within the acceptable range, panel is clean
-        if (actualPower >= min && actualPower <= max) {
-          hasDust = false;
-          dustLevel = 'clean';
-          efficiency = 100; // Within acceptable range
-          powerLossPercent = 0;
-          recommendation = `✅ Panel is clean. Power ${actualPower.toFixed(2)}W is within expected range ${min}-${max}W at ${currentTemp}°C`;
-          console.log(`   ✅ Power within acceptable range: ${min}W ≤ ${actualPower.toFixed(2)}W ≤ ${max}W`);
-        } else if (actualPower < min) {
-          // Below minimum acceptable power - dust detected
-          const powerDeficit = ((min - actualPower) / min) * 100;
-          hasDust = true;
-          
-          if (powerDeficit >= 15) {
-            dustLevel = 'heavy';
-            recommendation = `⚠️ Heavy dust detected! Power ${actualPower.toFixed(2)}W is below expected minimum ${min}W at ${currentTemp}°C`;
-          } else {
-            dustLevel = 'light';
-            recommendation = `⚠️ Light dust detected. Power ${actualPower.toFixed(2)}W is slightly below expected minimum ${min}W at ${currentTemp}°C`;
-          }
-          
-          efficiency = (actualPower / min) * 100;
-          powerLossPercent = powerDeficit;
-          console.log(`   ⚠️ Power below minimum: ${actualPower.toFixed(2)}W < ${min}W (${powerDeficit.toFixed(2)}% deficit)`);
-        } else {
-          // Above maximum (unusual but possible on very clear days)
-          efficiency = (actualPower / max) * 100;
-          powerLossPercent = 0;
-          recommendation = `✅ Panel performing above expected! Power ${actualPower.toFixed(2)}W exceeds maximum ${max}W`;
-          console.log(`   🌟 Power above maximum: ${actualPower.toFixed(2)}W > ${max}W`);
-        }
-
-        return {
-          hasDust,
-          dustLevel,
-          efficiency: efficiency.toFixed(2),
-          powerLoss: powerLossPercent.toFixed(2),
-          actualPower: actualPower.toFixed(2),
-          expectedPower: `${min}-${max}`,
-          recommendation
-        };
-      }
-    }
-
-    // Standard analysis using single expected power value
-    if (powerLossPercent >= this.DUST_THRESHOLD_PERCENT) {
-      hasDust = true;
-      dustLevel = 'heavy';
-      recommendation = '⚠️ Heavy dust detected! Clean panel immediately to restore efficiency';
-    } else if (powerLossPercent >= this.LIGHT_DUST_THRESHOLD) {
-      hasDust = true;
-      dustLevel = 'light';
-      recommendation = '⚠️ Light dust accumulation detected. Consider cleaning soon';
-    }
-
-    return {
-      hasDust,
-      dustLevel,
-      efficiency: efficiency.toFixed(2),
-      powerLoss: powerLossPercent.toFixed(2),
-      actualPower: actualPower.toFixed(2),
-      expectedPower: expectedPower.toFixed(2),
-      recommendation
-    };
   }
 
   // Main function to check dust on solar panel
   async checkPanelDust(panelId, actualVoltage, actualCurrent, actualPower, ratedPower) {
     try {
-      console.log(`\n🔍 Checking dust on Solar Panel ${panelId}...`);
-      
       // Fetch current weather
       const weather = await this.fetchWeatherData();
       
@@ -212,12 +177,6 @@ class DustDetectionService {
       
       // Calculate expected power based on temperature
       const expectedPower = this.calculateExpectedPower(ratedPower, currentTemp);
-      
-      console.log(`\n📊 Panel ${panelId} Analysis:`);
-      console.log(`   🌡️ Temperature: ${currentTemp}°C`);
-      console.log(`   📍 Location: ${weather.location || 'Unknown'}`);
-      console.log(`   ⚡ Expected Power: ${typeof expectedPower === 'number' ? expectedPower.toFixed(2) + 'W' : expectedPower}`);
-      console.log(`   ⚡ Actual Power: ${actualPower}W`);
       
       // Analyze dust presence (pass current temperature for range checking)
       const dustAnalysis = this.analyzeDustPresence(actualPower, expectedPower, ratedPower, currentTemp);

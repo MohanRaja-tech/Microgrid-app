@@ -59,6 +59,19 @@ const SolarScreen = () => {
   const [currentLocation, setCurrentLocation] = useState(null);
   const [locationPermission, setLocationPermission] = useState(null);
   const shouldSaveToStorage = React.useRef(true);
+  
+  // Refs to store latest values for dust checking without causing re-renders
+  const solarRealTimeDataRef = React.useRef(solarRealTimeData);
+  const currentLocationRef = React.useRef(currentLocation);
+  
+  // Update refs when state changes
+  React.useEffect(() => {
+    solarRealTimeDataRef.current = solarRealTimeData;
+  }, [solarRealTimeData]);
+  
+  React.useEffect(() => {
+    currentLocationRef.current = currentLocation;
+  }, [currentLocation]);
 
   // initialize panel list with per-panel date fields
   const [solarData, setSolarData] = useState(() => {
@@ -73,12 +86,10 @@ const SolarScreen = () => {
   useEffect(() => {
     const requestLocationPermission = async () => {
       try {
-        console.log('📍 Requesting location permission...');
         const { status } = await Location.requestForegroundPermissionsAsync();
         setLocationPermission(status);
         
         if (status === 'granted') {
-          console.log('✅ Location permission granted');
           const location = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.Balanced,
           });
@@ -91,10 +102,7 @@ const SolarScreen = () => {
           };
           
           setCurrentLocation(locationData);
-          console.log('📍 Current Location:', locationData);
-          console.log(`📍 Lat: ${locationData.latitude}, Lon: ${locationData.longitude}`);
         } else {
-          console.log('❌ Location permission denied');
           Alert.alert(
             'Location Permission',
             'Location permission is required to get accurate weather data for dust detection.',
@@ -148,14 +156,10 @@ const SolarScreen = () => {
     setConnectionStatus('Connecting...');
 
     const handleWebSocketMessage = (message) => {
-      console.log('Solar Screen received WebSocket message:', message);
-      
       // Only process solar panel data (solar1/all, solar2/all)
       if (message.panelId && message.data) {
         const panelId = message.panelId;
         const panelData = message.data;
-        
-        console.log(`Updating Solar Array ${panelId}:`, panelData);
         
         // Update real-time data state
         setSolarRealTimeData(prevData => ({
@@ -166,7 +170,6 @@ const SolarScreen = () => {
     };
 
     const handleConnectionStatus = (status) => {
-      console.log('Solar Screen connection status:', status);
       setConnectionStatus(status);
     };
 
@@ -205,19 +208,13 @@ const SolarScreen = () => {
     saveData();
   }, [solarData, isLoaded]);
 
-  // Check dust when real-time data updates (using live location if available)
+  // Check dust whenever real-time data changes
   useEffect(() => {
     const checkDust = async () => {
       const panelsWithData = Object.keys(solarRealTimeData).filter(id => solarRealTimeData[id] !== null);
       
-      if (panelsWithData.length === 0) return;
-
-      // Use live location if available, otherwise use default
-      let latitude, longitude;
-      if (currentLocation) {
-        latitude = currentLocation.latitude;
-        longitude = currentLocation.longitude;
-        console.log('📍 Using live location for weather data');
+      if (panelsWithData.length === 0 || !weatherData) {
+        return;
       }
 
       for (const panelId of panelsWithData) {
@@ -231,20 +228,6 @@ const SolarScreen = () => {
           
           // Assume rated power of 1000W for each panel (can be configured)
           const ratedPower = 1000;
-          
-          // Fetch weather with live location first
-          let weather = null;
-          if (latitude && longitude) {
-            weather = await DustDetectionService.fetchWeatherData(latitude, longitude);
-          } else {
-            weather = await DustDetectionService.fetchWeatherData();
-          }
-
-          if (weather) {
-            setWeatherData(weather);
-            console.log(`🌡️ Temperature at location: ${weather.temperature}°C`);
-            console.log(`📍 Weather location: ${weather.location || 'Unknown'}`);
-          }
           
           const result = await DustDetectionService.checkPanelDust(
             parseInt(panelId),
@@ -264,12 +247,33 @@ const SolarScreen = () => {
       }
     };
 
-    // Check dust every 5 minutes
     checkDust();
-    const interval = setInterval(checkDust, 5 * 60 * 1000);
+  }, [solarRealTimeData, weatherData]); // Run whenever real-time data or weather updates
 
-    return () => clearInterval(interval);
-  }, [solarRealTimeData, currentLocation]);
+  // Fetch weather once on mount
+  useEffect(() => {
+    const fetchWeather = async () => {
+      let latitude, longitude;
+      if (currentLocation) {
+        latitude = currentLocation.latitude;
+        longitude = currentLocation.longitude;
+      }
+
+      let weather = null;
+      if (latitude && longitude) {
+        weather = await DustDetectionService.fetchWeatherData(latitude, longitude);
+      } else {
+        weather = await DustDetectionService.fetchWeatherData();
+      }
+      
+      if (weather) {
+        setWeatherData(weather);
+      }
+    };
+
+    const timer = setTimeout(fetchWeather, 3000);
+    return () => clearTimeout(timer);
+  }, [currentLocation]); // Fetch weather when location is available
 
   // Get current solar data with real-time updates (similar to LiveScreen's getCurrentMeterData)
   const getCurrentSolarData = () => {
@@ -277,7 +281,6 @@ const SolarScreen = () => {
       const realTimeData = solarRealTimeData[panel.id];
       
       if (realTimeData) {
-        console.log(`Merging real-time data for panel ${panel.id}:`, realTimeData);
         return {
           ...panel,
           voltage: realTimeData.voltage !== undefined ? parseFloat(realTimeData.voltage).toFixed(1) : panel.voltage,
@@ -554,23 +557,6 @@ const SolarScreen = () => {
           </TouchableOpacity>
         </View>
         
-        <View style={styles.summaryRow}>
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryValue}>{totalPower}</Text>
-            <Text style={styles.summaryUnit}>W</Text>
-            <Text style={styles.summaryLabel}>Total Power</Text>
-          </View>
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryValue}>{avgEfficiency}</Text>
-            <Text style={styles.summaryUnit}>%</Text>
-            <Text style={styles.summaryLabel}>Avg Efficiency</Text>
-          </View>
-          <View style={styles.summaryCard}>
-            <Text style={styles.summaryValue}>{onlinePanels}</Text>
-            <Text style={styles.summaryUnit}>/{currentSolarData.length}</Text>
-            <Text style={styles.summaryLabel}>Online</Text>
-          </View>
-        </View>
       </LinearGradient>
 
       <ScrollView
