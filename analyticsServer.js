@@ -405,6 +405,7 @@ async function startServer() {
     app.listen(PORT, '0.0.0.0', () => {
         console.log(`\n🚀 Analytics API Server running on port ${PORT}`);
         console.log(`📊 Database: ${dbConnected ? 'Connected' : 'Not connected'}`);
+        console.log(`📊 Database at: ${dbConfig.host}:${dbConfig.port}`);
         console.log(`\n📋 Available endpoints:`);
         console.log(`   GET  /api/health          - Health check`);
         console.log(`   GET  /api/config          - Get table configuration`);
@@ -414,7 +415,9 @@ async function startServer() {
         console.log(`   POST /api/analytics/aggregated - Fetch aggregated data`);
         console.log(`   GET  /api/meter/summary   - Meter data summary`);
         console.log(`   GET  /api/solar/summary   - Solar data summary`);
-        console.log(`\n🌐 Access from mobile app: http://192.168.43.205:${PORT}`);
+        console.log(`\n🌐 Access URLs:`);
+        console.log(`   Tailscale: http://100.125.43.74:${PORT}`);
+        console.log(`   Local:     http://localhost:${PORT}`);
     });
 }
 

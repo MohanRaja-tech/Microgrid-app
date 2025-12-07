@@ -18,7 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
 const { width, height } = Dimensions.get('window');
-const API_BASE_URL = 'http://192.168.43.147:5000';
+const API_BASE_URL = 'http://100.69.116.48:5000';
 
 const AIChatScreen = () => {
   const navigation = useNavigation();
@@ -112,7 +112,7 @@ const AIChatScreen = () => {
 
   const checkHealth = async () => {
     try {
-      const response = await fetch('http://192.168.43.147:5000/api/health');
+      const response = await fetch(`${API_BASE_URL}/api/health`);
       const data = await response.json();
       setSystemStatus(data);
     } catch (error) {
@@ -131,7 +131,7 @@ const AIChatScreen = () => {
       const fullStartDate = `${startDate}T${startTime}`;
       const fullEndDate = `${endDate}T${endTime}`;
       
-      const response = await fetch('http://192.168.43.147:5000/api/date-range-analysis', {
+      const response = await fetch(`${API_BASE_URL}/api/date-range-analysis`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -173,7 +173,7 @@ const AIChatScreen = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://192.168.43.147:5000/api/chat', {
+      const response = await fetch(`${API_BASE_URL}/api/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

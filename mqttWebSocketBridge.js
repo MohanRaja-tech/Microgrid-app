@@ -16,7 +16,7 @@ const MQTT_PORT = 1883;
 
 // MQTT setup
 const topic = 'pzem1/all';
-const additionalTopics = ['pzem2/all', 'pzem3/all'];
+const additionalTopics = ['pzem2/all', 'pzem3/all', 'solar1/all', 'solar2/all'];
 let client;
 
 // Function to check if IP is reachable
@@ -46,7 +46,16 @@ function checkIPAvailability(ip, port, timeout = 3000) {
 // Connect to MQTT with fallback
 let brokerUrl = '';
 async function connectMQTT() {
-  const primaryAvailable = await checkIPAvailability(PRIMARY_IP, MQTT_PORT);
+  console.log(`Checking PRIMARY IP: ${PRIMARY_IP}:${MQTT_PORT}...`);
+  const primaryAvailable = await checkIPAvailability(PRIMARY_IP, MQTT_PORT, 5000);
+  console.log(`Primary IP ${PRIMARY_IP} available: ${primaryAvailable}`);
+  
+  if (!primaryAvailable) {
+    console.log(`Checking FALLBACK IP: ${FALLBACK_IP}:${MQTT_PORT}...`);
+    const fallbackAvailable = await checkIPAvailability(FALLBACK_IP, MQTT_PORT, 5000);
+    console.log(`Fallback IP ${FALLBACK_IP} available: ${fallbackAvailable}`);
+  }
+  
   brokerUrl = primaryAvailable 
     ? `mqtt://${PRIMARY_IP}:${MQTT_PORT}`
     : `mqtt://${FALLBACK_IP}:${MQTT_PORT}`;
@@ -110,15 +119,20 @@ client.on('message', (topic, message) => {
     const jsonData = JSON.parse(payload);
     console.log(`Received MQTT data from ${topic}:`, jsonData);
     
-    // Determine meter ID based on topic, keeping pzem1/all as default behavior
+    // Determine meter ID or panel ID based on topic, keeping pzem1/all as default behavior
     let meterId = 1; // Default for pzem1/all (maintaining existing logic)
+    let panelId = null;
+    
     if (topic === 'pzem2/all') meterId = 2;
     else if (topic === 'pzem3/all') meterId = 3;
+    else if (topic === 'solar1/all') panelId = 1;
+    else if (topic === 'solar2/all') panelId = 2;
     
     // Broadcast to all connected WebSocket clients
     const dataToSend = JSON.stringify({
       topic: topic,
-      meterId: meterId,
+      meterId: panelId ? null : meterId,
+      panelId: panelId,
       data: jsonData,
       timestamp: new Date().toISOString()
     });

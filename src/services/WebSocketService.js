@@ -6,9 +6,9 @@ class WebSocketService {
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
     this.reconnectInterval = 3000; // 3 seconds
-    // Use local Wi-Fi network IP - both server and phone must be on same Wi-Fi
-    this.PRIMARY_WS_URL = 'ws://192.168.43.110:8080';  // Server's local Wi-Fi IP
-    this.FALLBACK_WS_URL = 'ws://100.119.95.70:8080'; // Tailscale IP
+    // WebSocket bridge runs on this PC (100.125.43.74), not on database server
+    this.PRIMARY_WS_URL = 'ws://100.125.43.74:8080';  // This PC Tailscale IP
+    this.FALLBACK_WS_URL = 'ws://192.168.43.205:8080'; // Local Wi-Fi fallback
     this.currentUrl = this.PRIMARY_WS_URL;
   }
 

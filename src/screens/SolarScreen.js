@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import WebSocketService from '../services/WebSocketService';
 
 const SOLAR_STORAGE_KEY = '@solar_panel_data';
 
@@ -45,14 +46,20 @@ const Storage = {
 const SolarScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('Disconnected');
+  const [solarRealTimeData, setSolarRealTimeData] = useState({
+    1: null,
+    2: null,
+  });
+  const shouldSaveToStorage = React.useRef(true);
 
   // initialize panel list with per-panel date fields
   const [solarData, setSolarData] = useState(() => {
     const today = new Date().toISOString().slice(0, 10);
     return [
-      { id: 1, name: 'Solar Array 1', voltage: 48.5, current: 17.5, power: 850, temperature: 45.2, efficiency: 18.5, irradiance: 950, status: 'Online', date: today, inputDate: today, startDate: today, confirmed: false },
-      { id: 2, name: 'Solar Array 2', voltage: 47.8, current: 16.2, power: 775, temperature: 43.8, efficiency: 17.8, irradiance: 920, status: 'Online', date: today, inputDate: today, startDate: today, confirmed: false },
-      { id: 3, name: 'Solar Array 3', voltage: 49.2, current: 18.1, power: 890, temperature: 46.5, efficiency: 19.2, irradiance: 980, status: 'Maintenance', date: today, inputDate: today, startDate: today, confirmed: false },
+      { id: 1, name: 'Solar Array 1', voltage: '-', current: '-', power: '-', temperature: '-', efficiency: '-', irradiance: '-', status: 'Connecting', date: today, inputDate: today, startDate: today, confirmed: false },
+      { id: 2, name: 'Solar Array 2', voltage: '-', current: '-', power: '-', temperature: '-', efficiency: '-', irradiance: '-', status: 'Connecting', date: today, inputDate: today, startDate: today, confirmed: false },
+      { id: 3, name: 'Solar Array 3', voltage: '-', current: '-', power: '-', temperature: '-', efficiency: '-', irradiance: '-', status: 'Offline', date: today, inputDate: today, startDate: today, confirmed: false },
     ];
   });
 
@@ -63,7 +70,22 @@ const SolarScreen = () => {
         const stored = await Storage.getItem(SOLAR_STORAGE_KEY);
         if (stored) {
           const parsed = JSON.parse(stored);
-          setSolarData(parsed);
+          // Only load date-related fields, not sensor values
+          setSolarData(prevData => 
+            prevData.map(panel => {
+              const saved = parsed.find(p => p.id === panel.id);
+              if (saved) {
+                return {
+                  ...panel,
+                  date: saved.date || panel.date,
+                  inputDate: saved.inputDate || panel.inputDate,
+                  startDate: saved.startDate || panel.startDate,
+                  confirmed: saved.confirmed || panel.confirmed
+                };
+              }
+              return panel;
+            })
+          );
         }
       } catch (e) {
         console.log('Failed to load solar data', e);
@@ -74,18 +96,91 @@ const SolarScreen = () => {
     loadData();
   }, []);
 
-  // Save data to AsyncStorage whenever solarData changes
+  // WebSocket connection using WebSocketService (same as LiveScreen)
   useEffect(() => {
-    if (!isLoaded) return; // Don't save until initial load is done
+    WebSocketService.connect();
+    setConnectionStatus('Connecting...');
+
+    const handleWebSocketMessage = (message) => {
+      console.log('Solar Screen received WebSocket message:', message);
+      
+      // Only process solar panel data (solar1/all, solar2/all)
+      if (message.panelId && message.data) {
+        const panelId = message.panelId;
+        const panelData = message.data;
+        
+        console.log(`Updating Solar Array ${panelId}:`, panelData);
+        
+        // Update real-time data state
+        setSolarRealTimeData(prevData => ({
+          ...prevData,
+          [panelId]: panelData
+        }));
+      }
+    };
+
+    const handleConnectionStatus = (status) => {
+      console.log('Solar Screen connection status:', status);
+      setConnectionStatus(status);
+    };
+
+    WebSocketService.addMessageListener(handleWebSocketMessage);
+    WebSocketService.addConnectionStatusListener(handleConnectionStatus);
+
+    return () => {
+      WebSocketService.removeMessageListener(handleWebSocketMessage);
+      WebSocketService.removeConnectionStatusListener(handleConnectionStatus);
+    };
+  }, []);
+
+  // Save data to AsyncStorage for date/confirmation changes only
+  useEffect(() => {
+    if (!isLoaded || !shouldSaveToStorage.current) {
+      shouldSaveToStorage.current = true; // Reset flag
+      return;
+    }
     const saveData = async () => {
       try {
-        await Storage.setItem(SOLAR_STORAGE_KEY, JSON.stringify(solarData));
+        // Only save date-related fields, not live sensor data
+        const dataToSave = solarData.map(panel => ({
+          id: panel.id,
+          name: panel.name,
+          date: panel.date,
+          inputDate: panel.inputDate,
+          startDate: panel.startDate,
+          confirmed: panel.confirmed,
+          status: panel.status === 'Online' ? 'Connecting' : panel.status
+        }));
+        await Storage.setItem(SOLAR_STORAGE_KEY, JSON.stringify(dataToSave));
       } catch (e) {
         console.log('Failed to save solar data', e);
       }
     };
     saveData();
   }, [solarData, isLoaded]);
+
+  // Get current solar data with real-time updates (similar to LiveScreen's getCurrentMeterData)
+  const getCurrentSolarData = () => {
+    return solarData.map(panel => {
+      const realTimeData = solarRealTimeData[panel.id];
+      
+      if (realTimeData) {
+        console.log(`Merging real-time data for panel ${panel.id}:`, realTimeData);
+        return {
+          ...panel,
+          voltage: realTimeData.voltage !== undefined ? parseFloat(realTimeData.voltage).toFixed(1) : panel.voltage,
+          current: realTimeData.current !== undefined ? parseFloat(realTimeData.current).toFixed(2) : panel.current,
+          power: realTimeData.power !== undefined ? parseFloat(realTimeData.power).toFixed(1) : panel.power,
+          temperature: '-',
+          efficiency: '-',
+          irradiance: '-',
+          status: 'Online',
+        };
+      }
+      
+      return panel;
+    });
+  };
 
   // Helper to calculate day count
   const getDayCount = (startDate, currentDate) => {
@@ -102,6 +197,9 @@ const SolarScreen = () => {
 
   const onRefresh = () => {
     setRefreshing(true);
+    if (connectionStatus !== 'Connected') {
+      WebSocketService.connect();
+    }
     setTimeout(() => {
       setRefreshing(false);
     }, 2000);
@@ -121,12 +219,14 @@ const SolarScreen = () => {
       case 'Online': return { bg: '#ecfdf5', color: '#10b981', dot: '#10b981' };
       case 'Offline': return { bg: '#fef2f2', color: '#ef4444', dot: '#ef4444' };
       case 'Maintenance': return { bg: '#fffbeb', color: '#f59e0b', dot: '#f59e0b' };
+      case 'Connecting': return { bg: '#eff6ff', color: '#3b82f6', dot: '#3b82f6' };
       default: return { bg: '#f1f5f9', color: '#64748b', dot: '#64748b' };
     }
   };
 
   const renderSolarCard = (panel) => {
     const statusConfig = getStatusConfig(panel.status);
+    
     const parameters = [
       { key: 'voltage', label: 'Voltage', value: `${panel.voltage}`, unit: 'V' },
       { key: 'current', label: 'Current', value: `${panel.current}`, unit: 'A' },
@@ -194,12 +294,12 @@ const SolarScreen = () => {
               <View style={styles.performanceBar}>
                 <LinearGradient
                   colors={['#10b981', '#34d399']}
-                  style={[styles.performanceFill, { width: `${panel.efficiency * 5}%` }]}
+                  style={[styles.performanceFill, { width: panel.efficiency === '-' ? '0%' : `${parseFloat(panel.efficiency) * 5}%` }]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                 />
               </View>
-              <Text style={styles.performancePercent}>{panel.efficiency}%</Text>
+              <Text style={styles.performancePercent}>{panel.efficiency === '-' ? '-' : `${panel.efficiency}%`}</Text>
             </View>
           </View>
 
@@ -239,9 +339,20 @@ const SolarScreen = () => {
     );
   };
 
-  const totalPower = solarData.reduce((sum, panel) => sum + panel.power, 0);
-  const avgEfficiency = (solarData.reduce((sum, panel) => sum + panel.efficiency, 0) / solarData.length).toFixed(1);
-  const onlinePanels = solarData.filter(p => p.status === 'Online').length;
+  // Get current data with real-time updates
+  const currentSolarData = getCurrentSolarData();
+
+  const totalPower = currentSolarData.reduce((sum, panel) => {
+    const power = panel.power === '-' ? 0 : parseFloat(panel.power);
+    return sum + power;
+  }, 0);
+  
+  const efficiencyValues = currentSolarData.filter(p => p.efficiency !== '-').map(p => parseFloat(p.efficiency));
+  const avgEfficiency = efficiencyValues.length > 0 
+    ? (efficiencyValues.reduce((sum, val) => sum + val, 0) / efficiencyValues.length).toFixed(1)
+    : '-';
+    
+  const onlinePanels = currentSolarData.filter(p => p.status === 'Online').length;
 
   return (
     <View style={styles.container}>
@@ -274,7 +385,7 @@ const SolarScreen = () => {
           </View>
           <View style={styles.summaryCard}>
             <Text style={styles.summaryValue}>{onlinePanels}</Text>
-            <Text style={styles.summaryUnit}>/{solarData.length}</Text>
+            <Text style={styles.summaryUnit}>/{currentSolarData.length}</Text>
             <Text style={styles.summaryLabel}>Online</Text>
           </View>
         </View>
@@ -288,7 +399,7 @@ const SolarScreen = () => {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#f59e0b']} />
         }
       >
-        {solarData.map((panel) => renderSolarCard(panel))}
+        {currentSolarData.map((panel) => renderSolarCard(panel))}
         <View style={styles.bottomSpacer} />
       </ScrollView>
     </View>

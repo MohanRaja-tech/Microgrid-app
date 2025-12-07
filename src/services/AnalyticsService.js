@@ -37,10 +37,11 @@ const DB_CONFIG = {
 };
 
 // API Base URLs - Points to the backend server running on your local machine
-// The backend server (analyticsServer.js) connects to PostgreSQL
+// The backend server (analyticsServer.js) connects to PostgreSQL at 100.69.116.48:5432
 // Primary IP will be tried first, then fallback
-const PRIMARY_API_URL = 'http://100.69.116.48:3001';
-const FALLBACK_API_URL = 'http://192.168.43.205:3001';
+// Note: Analytics server runs on this PC (100.125.43.74), DB is on 100.69.116.48
+const PRIMARY_API_URL = 'http://100.125.43.74:3001';  // This PC Tailscale IP
+const FALLBACK_API_URL = 'http://192.168.43.205:3001';  // Local Wi-Fi IP fallback
 let API_BASE_URL = PRIMARY_API_URL;
 
 class AnalyticsService {
@@ -51,17 +52,25 @@ class AnalyticsService {
 
   // Try API request with fallback
   async fetchWithFallback(endpoint, options = {}) {
+    const fullUrl = `${API_BASE_URL}${endpoint}`;
+    console.log(`🔗 Attempting: ${fullUrl}`);
+    
     try {
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+      const response = await fetch(fullUrl, options);
+      console.log(`📡 Response status: ${response.status}`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return response;
     } catch (error) {
+      console.error(`❌ Request failed: ${error.message}`);
       // If primary fails and we haven't tried fallback yet
       if (API_BASE_URL === PRIMARY_API_URL && !this.usingFallback) {
-        console.log('Primary API failed, trying fallback...');
+        console.log('⚠️ Primary API failed, trying fallback...');
         API_BASE_URL = FALLBACK_API_URL;
         this.usingFallback = true;
-        const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+        const fallbackUrl = `${API_BASE_URL}${endpoint}`;
+        console.log(`🔗 Attempting fallback: ${fallbackUrl}`);
+        const response = await fetch(fallbackUrl, options);
+        console.log(`📡 Fallback response status: ${response.status}`);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response;
       }
@@ -87,35 +96,42 @@ class AnalyticsService {
     try {
       const tableName = this.getTableName(sourceType);
 
-      console.log('Fetching analytics data:', {
+      console.log('📊 Fetching analytics data:', {
         sourceType,
         filterValue,
         fromDateStr,
         toDateStr,
-        tableName
+        tableName,
+        apiUrl: API_BASE_URL
       });
+
+      const requestBody = {
+        table: tableName,
+        sourceType: sourceType,
+        filterColumn: sourceType === 'Meter' ? 'meter_id' : 'panel_id',
+        filterValue: filterValue,
+        fromDate: fromDateStr,
+        toDate: toDateStr,
+      };
+
+      console.log('📤 Request body:', requestBody);
 
       const response = await this.fetchWithFallback('/api/analytics', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          table: tableName,
-          sourceType: sourceType,
-          filterColumn: sourceType === 'Meter' ? 'meter_id' : 'panel_id',
-          filterValue: filterValue,
-          fromDate: fromDateStr,
-          toDate: toDateStr,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ API Error Response:', errorText);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       const result = await response.json();
-      console.log('API Response:', result);
+      console.log('✅ API Response:', result);
 
       if (result.success) {
         return {
